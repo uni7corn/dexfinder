@@ -303,19 +303,69 @@ dexfinder --dex-file app.apk --query "getDeviceId" --trace --format model | jq '
 }
 ```
 
-### 9. ProGuard/R8 deobfuscation
+### 9. ProGuard/R8 mapping — query and display
+
+With `--mapping`, both **input** and **output** support original (unobfuscated) names.
+
+**Query by original name → auto-converts to obfuscated name for DEX search:**
 
 ```bash
-# Deobfuscated output
-dexfinder --dex-file app.apk --query "getDeviceId" --trace --mapping mapping.txt
+# Query with original simple class name (mapping converts "KotlinCases" → "LJ7;" internally)
+dexfinder --dex-file app.apk --query "KotlinCases" --mapping mapping.txt
 
-# Show both original and obfuscated names
-dexfinder --dex-file app.apk --query "getDeviceId" --trace --mapping mapping.txt --show-obf
+# Query with original Java full name
+dexfinder --dex-file app.apk --query "com.example.app.utils.Helper" --mapping mapping.txt
+
+# Query with obfuscated name still works
+dexfinder --dex-file app.apk --query "LJ7;" --mapping mapping.txt
+```
+
+**Output deobfuscated names in trace:**
+
+```bash
+# Tree trace with deobfuscated names
+dexfinder --dex-file app.apk --query "KotlinCases" --mapping mapping.txt --trace --depth 3
 ```
 ```
-com.example.Foo.originalMethod(Foo.java)
-└── com.example.Bar.originalCaller(Bar.java)  [obf: a.b.c]
+com.example.kotlin.KotlinCases$$ExternalSyntheticLambda1.<init>(int)
+└── com.example.TestEntry.runAllTests(TestEntry.java)
+    └── com.example.MainActivity.onCreate(MainActivity.java)
 ```
+
+**Show both obfuscated and original names:**
+
+```bash
+dexfinder --dex-file app.apk --query "KotlinCases" --mapping mapping.txt --show-obf --trace
+```
+```
+com.example.kotlin.KotlinCases.fetchLocationAsync(KotlinCases.java)
+└── com.example.kotlin.KotlinCases$testCoroutines$3.invokeSuspend(KotlinCases.java)  [obf: G7.e]
+    └── com.example.kotlin.KotlinCases$testCoroutines$3.create(KotlinCases.java)  [obf: G7.b]
+```
+
+**All combinations with other flags:**
+
+```bash
+# Original name + trace as flat list
+dexfinder --dex-file app.apk --query "KotlinCases" --mapping mapping.txt --trace --layout list
+
+# Original name + DEX signature style
+dexfinder --dex-file app.apk --query "KotlinCases" --mapping mapping.txt --trace --style dex
+
+# Original name + JSON tree + show-obf
+dexfinder --dex-file app.apk --query "KotlinCases" --mapping mapping.txt --show-obf --trace --format json
+
+# Original name + reverse direction (what does this class call?)
+dexfinder --dex-file app.apk --query "com.example.kotlin.KotlinCases" --mapping mapping.txt --scope caller
+```
+
+**Input × Output matrix:**
+
+| Query input | No mapping | `--mapping` | `--mapping --show-obf` |
+|---|---|---|---|
+| Obfuscated: `LJ7;` | ✓ obfuscated output | ✓ deobfuscated output | ✓ both names |
+| Original simple: `KotlinCases` | ✗ not found | ✓ auto-converts, deobf output | ✓ auto-converts, both names |
+| Original full: `com.example...KotlinCases` | ✗ not found | ✓ auto-converts, deobf output | ✓ auto-converts, both names |
 
 ### 10. Hidden API detection
 
@@ -586,15 +636,63 @@ scope=caller: "finish() 内部调了什么？"
 
 ## 更多用法
 
-### 反混淆
+### 反混淆（--mapping）
+
+加载 `--mapping` 后，**输入和输出**都支持原始（未混淆）名称。
+
+**用原始名查询 → 自动转换为混淆名搜索 DEX：**
 
 ```bash
-# 显示反混淆名称
-dexfinder --dex-file app.apk --query "getDeviceId" --trace --mapping mapping.txt
+# 用原始简短类名查（mapping 内部将 "KotlinCases" 转为 "LJ7;"）
+dexfinder --dex-file app.apk --query "KotlinCases" --mapping mapping.txt
 
-# 同时显示混淆和原始名称
-dexfinder --dex-file app.apk --query "getDeviceId" --trace --mapping mapping.txt --show-obf
+# 用原始 Java 全名查
+dexfinder --dex-file app.apk --query "com.example.app.utils.Helper" --mapping mapping.txt
+
+# 用混淆名查也正常工作
+dexfinder --dex-file app.apk --query "LJ7;" --mapping mapping.txt
 ```
+
+**输出反混淆名称：**
+
+```bash
+# trace 树形 + 反混淆
+dexfinder --dex-file app.apk --query "KotlinCases" --mapping mapping.txt --trace
+```
+
+**同时显示混淆名和原始名：**
+
+```bash
+dexfinder --dex-file app.apk --query "KotlinCases" --mapping mapping.txt --show-obf --trace
+```
+```
+com.example.KotlinCases.fetchLocationAsync(KotlinCases.java)
+└── com.example.KotlinCases$testCoroutines$3.invokeSuspend(KotlinCases.java)  [obf: G7.e]
+```
+
+**与其他参数自由组合：**
+
+```bash
+# 原始名 + 展开列表
+dexfinder --dex-file app.apk --query "KotlinCases" --mapping mapping.txt --trace --layout list
+
+# 原始名 + DEX 签名风格
+dexfinder --dex-file app.apk --query "KotlinCases" --mapping mapping.txt --trace --style dex
+
+# 原始名 + JSON 树 + 显示混淆名
+dexfinder --dex-file app.apk --query "KotlinCases" --mapping mapping.txt --show-obf --trace --format json
+
+# 原始名 + 反向查看（这个类内部调了什么）
+dexfinder --dex-file app.apk --query "com.example.KotlinCases" --mapping mapping.txt --scope caller
+```
+
+**输入×输出矩阵：**
+
+| 查询输入 | 无 mapping | `--mapping` | `--mapping --show-obf` |
+|---|---|---|---|
+| 混淆名 `LJ7;` | ✓ 混淆输出 | ✓ 反混淆输出 | ✓ 两者并列 |
+| 原始简名 `KotlinCases` | ✗ 找不到 | ✓ 自动转换 + 反混淆输出 | ✓ 自动转换 + 两者并列 |
+| 原始全名 `com.example...` | ✗ 找不到 | ✓ 自动转换 + 反混淆输出 | ✓ 自动转换 + 两者并列 |
 
 ### Hidden API 检测
 
