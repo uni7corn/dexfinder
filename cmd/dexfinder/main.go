@@ -23,7 +23,9 @@ var version = "dev"
 var (
 	flagDexFile     = flag.String("dex-file", "", "APK/DEX/JAR file to analyze (required)")
 	flagQuery       = flag.String("query", "", "Search keyword (Java-style, DEX/JNI-style, or simple name)")
-	flagFormat      = flag.String("format", "text", "Output format: text, tree, list, stacktrace, json, model")
+	flagFormat      = flag.String("format", "text", "Output format: text, json, model")
+	flagLayout      = flag.String("layout", "tree", "Trace layout: tree (merged paths) or list (flat chains)")
+	flagStyle       = flag.String("style", "java", "Name style: java (readable) or dex (JNI signatures)")
 	flagFlagsFile   = flag.String("api-flags", "", "Path to hiddenapi-flags.csv (enables hidden API detection)")
 	flagClassFilter = flag.String("class-filter", "", "Comma-separated class descriptor prefixes to include")
 	flagExclude     = flag.String("exclude-api-lists", "", "Comma-separated API lists to exclude from reporting")
@@ -56,12 +58,15 @@ QUERY FORMATS (--query):
   DEX/JNI sig         Landroid/location/LocationManager;->requestLocationUpdates(Ljava/lang/String;JFLandroid/location/LocationListener;)V
 
 OUTPUT FORMATS (--format):
-  text         DEX signatures + tree (default)
-  tree         Java-readable names + merged tree (recommended with --trace)
-  list         Java-readable names + flat chain list
-  stacktrace   Alias for list (Java crash stacktrace style)
-  json         Simple JSON output
-  model        Structured JSON with full type info (for IDE/CI integration)
+  text         Plain text (default)
+  json         Simple JSON
+  model        Structured JSON with full type info (for IDE/CI)
+
+TRACE OPTIONS (--trace):
+  --layout tree   Merged tree — shared paths collapsed (default)
+  --layout list   Flat list — each chain shown independently
+  --style  java   Java readable names (default): com.foo.Bar.method(Bar.java)
+  --style  dex    DEX/JNI signatures: Bar.method(Ljava/lang/String;)V
 
 SEARCH SCOPE (--scope):
   all            Methods + fields + code strings (default)
@@ -140,10 +145,21 @@ OPTIONS:
 		fmt.Fprintf(os.Stderr, "Loaded %d class mappings\n", pm.Size())
 	}
 
+	style := report.StyleJava
+	if *flagStyle == "dex" {
+		style = report.StyleDex
+	}
+	layout := report.LayoutTree
+	if *flagLayout == "list" {
+		layout = report.LayoutList
+	}
+
 	dc := &report.DisplayConfig{
 		Mapping: pm,
 		ShowObf: *flagShowObf,
 		Format:  report.OutputFormat(*flagFormat),
+		Layout:  layout,
+		Style:   style,
 	}
 
 	// Build class filter

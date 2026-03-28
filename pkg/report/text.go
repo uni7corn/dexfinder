@@ -88,79 +88,41 @@ func DumpTrace(w io.Writer, result *finder.ScanResult, dexFiles []*dex.DexFile, 
 
 	cg := finder.BuildCallGraph(result, dexFiles)
 
-	switch {
-	case dc != nil && (dc.Format == FormatStacktrace || dc.Format == FormatList):
-		// Flat list of individual call chains (Java crash style)
-		dumpTraceStacktrace(w, qr, cg, maxDepth, dc)
-	case dc != nil && dc.Format == FormatTree:
-		// Merged tree with Java-readable names
-		dumpTraceJavaTree(w, qr, cg, maxDepth, dc)
-	default:
-		// DEX-style tree (original text format)
+	layout := LayoutTree
+	if dc != nil && dc.Layout == LayoutList {
+		layout = LayoutList
+	}
+
+	if layout == LayoutList {
+		dumpTraceList(w, qr, cg, maxDepth, dc)
+	} else {
 		dumpTraceTree(w, qr, cg, maxDepth, dc)
 	}
 }
 
+// dumpTraceTree renders call chains as a merged tree.
 func dumpTraceTree(w io.Writer, qr *finder.QueryResult, cg *finder.CallGraph, maxDepth int, dc *DisplayConfig) {
-	apis := sortedKeys(qr.MatchedMethods)
-	for _, api := range apis {
-		fmt.Fprintf(w, "━━━ %s ━━━\n", dc.FormatAPI(api))
+	allAPIs := append(sortedKeys(qr.MatchedMethods), sortedFieldKeys(qr.MatchedFields)...)
+	for _, api := range allAPIs {
+		fmt.Fprintf(w, "%s\n", dc.FormatHeader(api))
 		tree := cg.TraceCallers(api, maxDepth)
 		if len(tree.Callers) == 0 {
 			fmt.Fprintln(w, "  (no callers found)")
 		} else {
-			printTreeWithMapping(w, tree, "", true, dc)
-		}
-		fmt.Fprintln(w)
-	}
-
-	fieldAPIs := sortedFieldKeys(qr.MatchedFields)
-	for _, api := range fieldAPIs {
-		fmt.Fprintf(w, "━━━ %s ━━━\n", dc.FormatAPI(api))
-		tree := cg.TraceCallers(api, maxDepth)
-		if len(tree.Callers) == 0 {
-			fmt.Fprintln(w, "  (no callers found)")
-		} else {
-			printTreeWithMapping(w, tree, "", true, dc)
+			printTreeNodes(w, tree, "", dc)
 		}
 		fmt.Fprintln(w)
 	}
 }
 
-func dumpTraceJavaTree(w io.Writer, qr *finder.QueryResult, cg *finder.CallGraph, maxDepth int, dc *DisplayConfig) {
-	apis := sortedKeys(qr.MatchedMethods)
-	for _, api := range apis {
-		fmt.Fprintf(w, "%s\n", dc.FormatStacktraceTarget(api))
-		tree := cg.TraceCallers(api, maxDepth)
-		if len(tree.Callers) == 0 {
-			fmt.Fprintln(w, "  (no callers found)")
-		} else {
-			printJavaTree(w, tree, "", dc)
-		}
-		fmt.Fprintln(w)
-	}
-
-	fieldAPIs := sortedFieldKeys(qr.MatchedFields)
-	for _, api := range fieldAPIs {
-		fmt.Fprintf(w, "%s\n", dc.FormatStacktraceTarget(api))
-		tree := cg.TraceCallers(api, maxDepth)
-		if len(tree.Callers) == 0 {
-			fmt.Fprintln(w, "  (no callers found)")
-		} else {
-			printJavaTree(w, tree, "", dc)
-		}
-		fmt.Fprintln(w)
-	}
-}
-
-func printJavaTree(w io.Writer, node *finder.CallChainNode, prefix string, dc *DisplayConfig) {
+func printTreeNodes(w io.Writer, node *finder.CallChainNode, prefix string, dc *DisplayConfig) {
 	for i, caller := range node.Callers {
 		isLast := i == len(node.Callers)-1
 		connector := "├── "
 		if isLast {
 			connector = "└── "
 		}
-		label := dc.FormatStacktraceLine(caller.Method)
+		label := dc.FormatNode(caller.Method)
 		if caller.IsCycle {
 			label += " ⟳ [recursive]"
 		}
@@ -170,76 +132,31 @@ func printJavaTree(w io.Writer, node *finder.CallChainNode, prefix string, dc *D
 			if isLast {
 				childPrefix = prefix + "    "
 			}
-			printJavaTree(w, caller, childPrefix, dc)
+			printTreeNodes(w, caller, childPrefix, dc)
 		}
 	}
 }
 
-func dumpTraceStacktrace(w io.Writer, qr *finder.QueryResult, cg *finder.CallGraph, maxDepth int, dc *DisplayConfig) {
-	apis := sortedKeys(qr.MatchedMethods)
-	for _, api := range apis {
+// dumpTraceList renders call chains as flat individual chains.
+func dumpTraceList(w io.Writer, qr *finder.QueryResult, cg *finder.CallGraph, maxDepth int, dc *DisplayConfig) {
+	allAPIs := append(sortedKeys(qr.MatchedMethods), sortedFieldKeys(qr.MatchedFields)...)
+	for _, api := range allAPIs {
 		tree := cg.TraceCallers(api, maxDepth)
-		chains := finder.FlatCallerChains(tree, 50)
+		chains := finder.FlatCallerChains(tree, 100)
 
 		if len(chains) == 0 {
-			fmt.Fprintf(w, "--- %s ---\n", dc.FormatStacktraceTarget(api))
+			fmt.Fprintf(w, "--- %s ---\n", dc.FormatHeader(api))
 			fmt.Fprintln(w, "    (no callers found)")
 			fmt.Fprintln(w)
 			continue
 		}
 
 		for i, chain := range chains {
-			fmt.Fprintf(w, "--- Call chain #%d for %s ---\n", i+1, dc.FormatStacktraceTarget(api))
-			// chain[0] is the target, chain[1..] are callers bottom-up
-			// Print in reverse: root caller first (top of stack), target last (bottom)
+			fmt.Fprintf(w, "--- Call chain #%d for %s ---\n", i+1, dc.FormatHeader(api))
 			for j := len(chain) - 1; j >= 0; j-- {
-				fmt.Fprintf(w, "\tat %s\n", dc.FormatStacktraceLine(chain[j]))
+				fmt.Fprintf(w, "\tat %s\n", dc.FormatNode(chain[j]))
 			}
 			fmt.Fprintln(w)
-		}
-	}
-
-	fieldAPIs := sortedFieldKeys(qr.MatchedFields)
-	for _, api := range fieldAPIs {
-		tree := cg.TraceCallers(api, maxDepth)
-		chains := finder.FlatCallerChains(tree, 50)
-
-		if len(chains) == 0 {
-			fmt.Fprintf(w, "--- %s ---\n", dc.FormatStacktraceTarget(api))
-			fmt.Fprintln(w, "    (no callers found)")
-			fmt.Fprintln(w)
-			continue
-		}
-
-		for i, chain := range chains {
-			fmt.Fprintf(w, "--- Call chain #%d for %s ---\n", i+1, dc.FormatStacktraceTarget(api))
-			for j := len(chain) - 1; j >= 0; j-- {
-				fmt.Fprintf(w, "\tat %s\n", dc.FormatStacktraceLine(chain[j]))
-			}
-			fmt.Fprintln(w)
-		}
-	}
-}
-
-// printTreeWithMapping prints the call chain as an indented tree with optional deobfuscation.
-func printTreeWithMapping(w io.Writer, node *finder.CallChainNode, prefix string, _ bool, dc *DisplayConfig) {
-	for i, caller := range node.Callers {
-		isLast := i == len(node.Callers)-1
-		connector := "├── "
-		if isLast {
-			connector = "└── "
-		}
-		label := dc.FormatShort(caller.Method)
-		if caller.IsCycle {
-			label += " ⟳ [recursive]"
-		}
-		fmt.Fprintf(w, "%s%s%s\n", prefix, connector, label)
-		if !caller.IsCycle {
-			childPrefix := prefix + "│   "
-			if isLast {
-				childPrefix = prefix + "    "
-			}
-			printTreeWithMapping(w, caller, childPrefix, false, dc)
 		}
 	}
 }
