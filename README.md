@@ -1,270 +1,374 @@
 # dexfinder
 
+[English](#english) | [中文](#中文)
+
+---
+
+<a name="english"></a>
+
 Cross-platform APK/DEX method & field reference finder with call chain tracing, ProGuard/R8 deobfuscation, and Android hidden API detection.
 
-Inspired by Android's [veridex](https://android.googlesource.com/platform/art/+/refs/heads/master/tools/veridex/) tool, reimplemented in Go with enhanced capabilities.
+Inspired by Android's [veridex](https://android.googlesource.com/platform/art/+/refs/heads/master/tools/veridex/) tool, reimplemented in Go with enhanced capabilities: faster reflection detection, call chain tracing (veridex only shows one level), and flexible output formats.
 
 ## Features
 
 - **APK/DEX/JAR scanning** — Parse DEX bytecode, extract all method/field/string references
 - **Multi-format query** — Search by Java name, DEX/JNI signature, or simple keyword
 - **Call chain tracing** — Trace callers up to N levels deep, merged tree or flat list, with cycle detection
-- **ProGuard/R8 deobfuscation** — Load mapping.txt, display original names
+- **ProGuard/R8 deobfuscation** — Load mapping.txt, display original names alongside obfuscated
 - **Hidden API detection** — Load hiddenapi-flags.csv, detect blocked/unsupported APIs
-- **Reflection detection** — Cross-match classes × strings to find reflection-based hidden API usage (veridex-compatible)
-- **Flexible output** — text / json / model (structured), tree / list layout, java / dex name style
+- **Reflection detection** — Cross-match classes × strings to find reflection-based hidden API usage
+- **Flexible output** — text / json / model, tree / list layout, java / dex name style — all orthogonal
 - **Zero external dependencies** — Pure Go, self-contained DEX parser
-- **Cross-platform** — macOS (Intel/Apple Silicon), Linux (amd64/arm64), Windows
+- **Cross-platform** — macOS (Intel / Apple Silicon), Linux (amd64 / arm64), Windows
 
 ## Install
 
-### Homebrew (macOS/Linux)
-
+**Homebrew** (macOS / Linux):
 ```bash
 brew tap JuneLeGency/tap
 brew install dexfinder
 ```
 
-### Script
-
+**Script** (auto-detects OS/arch):
 ```bash
 curl -sSL https://raw.githubusercontent.com/JuneLeGency/dexfinder/main/install.sh | bash
 ```
 
-### Go
-
+**Go install**:
 ```bash
 go install github.com/JuneLeGency/dexfinder/cmd/dexfinder@latest
 ```
 
-### Binary
-
-Download from [Releases](https://github.com/JuneLeGency/dexfinder/releases).
+**Binary**: download from [Releases](https://github.com/JuneLeGency/dexfinder/releases).
 
 ## Quick Start
 
 ```bash
-# Scan APK and show stats
+# Show APK overview
 dexfinder --dex-file app.apk --stats
 
-# Find all calls to a method
+# Find all calls to getDeviceId (IMEI)
 dexfinder --dex-file app.apk --query "getDeviceId"
 
-# Trace call chains (merged tree, Java readable)
-dexfinder --dex-file app.apk --query "getDeviceId" --trace --depth 5
+# Trace call chains as merged tree
+dexfinder --dex-file app.apk --query "getDeviceId" --trace
 
-# Trace as flat list
+# Trace as flat call stacks (Java crash style)
 dexfinder --dex-file app.apk --query "getDeviceId" --trace --layout list
 
 # Exact JNI signature query
 dexfinder --dex-file app.apk \
   --query "Landroid/telephony/TelephonyManager;->getDeviceId()Ljava/lang/String;" \
-  --trace --depth 5
-```
+  --trace --depth 8
 
-## Usage
-
-```
-dexfinder --dex-file <path> [options]
-```
-
-### Query Formats (`--query`)
-
-| Format | Example | Behavior |
-|---|---|---|
-| Simple name | `getDeviceId` | Fuzzy substring match |
-| Java class | `android.telephony.TelephonyManager` | Match all methods of class |
-| Java class#method | `android.telephony.TelephonyManager#getDeviceId` | Match all overloads |
-| Java full sig | `...#getDeviceId()` | Exact match + overload fallback |
-| DEX/JNI sig | `Landroid/telephony/TelephonyManager;->getDeviceId()Ljava/lang/String;` | Exact match |
-
-### Output Format (`--format`)
-
-| Format | Description |
-|---|---|
-| `text` | Plain text (default) |
-| `json` | JSON output (supports `--trace` with tree/list layout) |
-| `model` | Structured JSON with full type info, for IDE/CI integration |
-
-### Trace Layout (`--layout`)
-
-Controls how call chains are rendered when using `--trace`:
-
-| Layout | Description |
-|---|---|
-| `tree` | Merged tree — shared paths collapsed (default) |
-| `list` | Flat list — each chain shown independently |
-
-### Name Style (`--style`)
-
-Controls how method/class names are displayed:
-
-| Style | Example |
-|---|---|
-| `java` | `com.example.Foo.method(Foo.java)` (default) |
-| `dex` | `Foo.method(Ljava/lang/String;)V` |
-
-`--format`, `--layout`, `--style` are orthogonal — any combination works:
-
-```
---format=text/json/model  ×  --layout=tree/list  ×  --style=java/dex
-```
-
-### Search Scope (`--scope`)
-
-| Scope | Searches |
-|---|---|
-| `all` | Methods + fields + code strings (default) |
-| `callee` | Only target API signatures |
-| `caller` | Only calling method signatures |
-| `string` | Only string constants in code |
-| `string-table` | Code strings + full DEX string table |
-| `everything` | All of the above |
-
-### Deobfuscation (`--mapping`)
-
-```bash
-# Show deobfuscated names
-dexfinder --dex-file app.apk --query "getDeviceId" --trace --mapping mapping.txt
-
-# Show both obfuscated and original names
-dexfinder --dex-file app.apk --query "getDeviceId" --trace --mapping mapping.txt --show-obf
-```
-
-### Hidden API Detection (`--api-flags`)
-
-```bash
-# Download the CSV (one-time)
-curl -o hiddenapi-flags.csv \
-  https://dl.google.com/developers/android/baklava/non-sdk/hiddenapi-flags.csv
-
-# Detect hidden API usage (linking + reflection)
+# Hidden API detection
 dexfinder --dex-file app.apk --api-flags hiddenapi-flags.csv
 ```
 
+## Query Formats
+
+The `--query` flag accepts multiple input styles. dexfinder auto-detects and converts between them.
+
+| Format | Example | Behavior |
+|---|---|---|
+| Simple name | `getDeviceId` | Fuzzy substring match across all APIs |
+| Java class | `android.telephony.TelephonyManager` | All methods/fields of that class |
+| Java class#method | `android.telephony.TelephonyManager#getDeviceId` | All overloads of that method |
+| Java full signature | `...TelephonyManager#getDeviceId()` | Exact + overload fallback |
+| DEX/JNI signature | `Landroid/telephony/TelephonyManager;->getDeviceId()Ljava/lang/String;` | Exact match only |
+
+```bash
+# All equivalent — find requestLocationUpdates in LocationManager:
+dexfinder --dex-file app.apk --query "requestLocationUpdates"
+dexfinder --dex-file app.apk --query "android.location.LocationManager#requestLocationUpdates"
+dexfinder --dex-file app.apk --query "Landroid/location/LocationManager;->requestLocationUpdates(Ljava/lang/String;JFLandroid/location/LocationListener;)V"
+```
+
+## Output Control
+
+Three independent axes, freely combinable:
+
+```
+--format  (text / json / model)    what to output
+--layout  (tree / list)            how to arrange traces
+--style   (java / dex)             how to display names
+```
+
+### `--format`
+
+| Value | Description |
+|---|---|
+| `text` | Plain text output (default) |
+| `json` | JSON — scan results or trace with tree/list layout |
+| `model` | Structured JSON with full MethodInfo/FieldInfo types (for IDE/CI) |
+
+### `--layout` (used with `--trace`)
+
+| Value | Description |
+|---|---|
+| `tree` | Merged tree — shared call paths collapsed into one tree (default) |
+| `list` | Flat list — each unique call chain shown as independent stack |
+
+### `--style`
+
+| Value | Example | Use case |
+|---|---|---|
+| `java` | `com.example.Foo.method(Foo.java)` | Human-readable (default) |
+| `dex` | `Foo.method(Ljava/lang/String;)V` | Precise signature analysis |
+
 ## Examples
 
-### Trace call chains as merged tree
+### 1. Scan APK statistics
+
+```bash
+dexfinder --dex-file app.apk --stats
+```
+```
+Loaded 31 DEX file(s): 183913 classes, 1250566 method refs
+Method references: 680610
+Field references:  625572
+String constants:  654353
+Referenced types:  192586
+Time: 3.9s
+```
+
+### 2. Find all location tracking calls
+
+```bash
+dexfinder --dex-file app.apk --query "requestLocationUpdates"
+```
+```
+[METHOD] Landroid/location/LocationManager;->requestLocationUpdates(Ljava/lang/String;JFLandroid/location/LocationListener;)V (3 ref)
+       Lcom/example/TestEntry;->init(Landroid/content/Context;)V (2 occurrences)
+       Lcom/example/service/LocationService;->onStartCommand(Landroid/content/Intent;II)I
+```
+
+### 3. Trace call chains — tree view
 
 ```bash
 dexfinder --dex-file app.apk \
   --query "Landroid/telephony/TelephonyManager;->getDeviceId()Ljava/lang/String;" \
   --trace --depth 5
 ```
-
 ```
 android.telephony.TelephonyManager.getDeviceId()
-└── ...aopsdk...TelephonyManager.getDeviceId(TelephonyManager.java)
-    ├── PhoneInfo.getImei(PhoneInfo.java)
-    ├── ClientIdHelper.initClientId(ClientIdHelper.java)
-    │   └── ContextInfo.<init>(ContextInfo.java)
-    │       ├── LogStrategyManager.getInstance(...)
-    │       └── LogContextImpl.<init>(...)
-    ├── DeviceInfo.k(DeviceInfo.java)
-    │   └── DeviceInfo.<init>() → getInstance()
-    │       ├── TidHelper.getIMEI()
-    │       └── TidHelper.getIMSI()
-    └── ...
+└── com.example.aopsdk.TelephonyManager.getDeviceId(TelephonyManager.java)
+    ├── com.example.session.PhoneInfo.getImei(PhoneInfo.java)
+    ├── com.example.logging.ClientIdHelper.initClientId(ClientIdHelper.java)
+    │   └── com.example.logging.ContextInfo.<init>(ContextInfo.java)
+    │       ├── com.example.logging.LogStrategyManager.getInstance(LogStrategyManager.java)
+    │       └── com.example.logging.LogContextImpl.<init>(LogContextImpl.java)
+    ├── com.example.msp.DeviceInfo.k(DeviceInfo.java)
+    │   └── com.example.msp.DeviceInfo.<init>(DeviceInfo.java)
+    │       └── com.example.msp.DeviceInfo.getInstance(DeviceInfo.java)
+    │           ├── com.example.msp.TidHelper.getIMEI(TidHelper.java)
+    │           ├── com.example.msp.TidHelper.getIMSI(TidHelper.java)
+    │           └── com.example.msp.DeviceCollector.collectData(DeviceCollector.java)
+    └── com.example.weex.WXEnvironment.getDevId(WXEnvironment.java)
+        └── com.example.weex.WXEnvironment.<clinit>(WXEnvironment.java)
 ```
 
-### Trace as flat list (Java crash style)
+### 4. Trace call chains — list view (Java crash style)
 
 ```bash
-dexfinder --dex-file app.apk --query "getDeviceId" --trace --layout list
+dexfinder --dex-file app.apk \
+  --query "Landroid/telephony/TelephonyManager;->getDeviceId()Ljava/lang/String;" \
+  --trace --depth 5 --layout list
 ```
-
 ```
 --- Call chain #1 for android.telephony.TelephonyManager.getDeviceId() ---
-	at com.example.PhoneInfo.getImei(PhoneInfo.java)
-	at com.example.TelephonyManager.getDeviceId(TelephonyManager.java)
+	at com.example.session.PhoneInfo.getImei(PhoneInfo.java)
+	at com.example.aopsdk.TelephonyManager.getDeviceId(TelephonyManager.java)
+	at android.telephony.TelephonyManager.getDeviceId(TelephonyManager.java)
+
+--- Call chain #2 for android.telephony.TelephonyManager.getDeviceId() ---
+	at com.example.logging.LogStrategyManager.getInstance(LogStrategyManager.java)
+	at com.example.logging.ContextInfo.<init>(ContextInfo.java)
+	at com.example.logging.ClientIdHelper.initClientId(ClientIdHelper.java)
+	at com.example.aopsdk.TelephonyManager.getDeviceId(TelephonyManager.java)
 	at android.telephony.TelephonyManager.getDeviceId(TelephonyManager.java)
 ```
 
-### JSON tree output
+### 5. Trace with DEX signature style
 
 ```bash
-dexfinder --dex-file app.apk --query "getDeviceId" --trace --format json
+dexfinder --dex-file app.apk --query "getDeviceId" --trace --depth 3 --style dex
+```
+```
+Landroid/telephony/TelephonyManager;->getDeviceId()Ljava/lang/String;
+└── TelephonyManager.getDeviceId(Landroid/telephony/TelephonyManager;)Ljava/lang/String;
+    ├── PhoneInfo.getImei(Landroid/content/Context;)Ljava/lang/String;
+    ├── ClientIdHelper.initClientId(Landroid/content/Context;)Ljava/lang/String;
+    └── DeviceInfo.k(Landroid/content/Context;)V
 ```
 
+### 6. JSON output — tree
+
+```bash
+dexfinder --dex-file app.apk --query "getDeviceId" --trace --depth 2 --format json
+```
 ```json
 {
   "targets": [{
     "api": "android.telephony.TelephonyManager.getDeviceId()",
     "tree": {
-      "method": "...TelephonyManager.getDeviceId(TelephonyManager.java)",
+      "method": "android.telephony.TelephonyManager.getDeviceId(TelephonyManager.java)",
       "callers": [
-        { "method": "PhoneInfo.getImei(PhoneInfo.java)" },
-        { "method": "ClientIdHelper.initClientId(ClientIdHelper.java)",
-          "callers": [{ "method": "ContextInfo.<init>(...)" }] }
+        { "method": "com.example.aopsdk.TelephonyManager.getDeviceId(TelephonyManager.java)",
+          "callers": [
+            { "method": "com.example.session.PhoneInfo.getImei(PhoneInfo.java)" },
+            { "method": "com.example.logging.ClientIdHelper.initClientId(ClientIdHelper.java)" }
+          ]}
       ]
     }
   }]
 }
 ```
 
-### JSON list output
+### 7. JSON output — list
 
 ```bash
-dexfinder --dex-file app.apk --query "getDeviceId" --trace --format json --layout list
+dexfinder --dex-file app.apk --query "getDeviceId" --trace --depth 2 --format json --layout list
 ```
-
 ```json
 {
   "targets": [{
     "api": "android.telephony.TelephonyManager.getDeviceId()",
     "chains": [
-      ["PhoneInfo.getImei(...)", "...TelephonyManager.getDeviceId(...)", "TelephonyManager.getDeviceId(...)"],
-      ["ClientIdHelper.initClientId(...)", "...TelephonyManager.getDeviceId(...)", "TelephonyManager.getDeviceId(...)"]
+      ["com.example.session.PhoneInfo.getImei(PhoneInfo.java)",
+       "com.example.aopsdk.TelephonyManager.getDeviceId(TelephonyManager.java)",
+       "android.telephony.TelephonyManager.getDeviceId(TelephonyManager.java)"],
+      ["com.example.logging.ClientIdHelper.initClientId(ClientIdHelper.java)",
+       "com.example.aopsdk.TelephonyManager.getDeviceId(TelephonyManager.java)",
+       "android.telephony.TelephonyManager.getDeviceId(TelephonyManager.java)"]
     ]
   }]
 }
 ```
 
-### Search content:// URIs (including optimized-out strings)
+### 8. Structured model output (for CI/IDE)
 
 ```bash
+dexfinder --dex-file app.apk --query "getDeviceId" --trace --format model | jq '.call_chains[0]'
+```
+```json
+{
+  "target": "Landroid/telephony/TelephonyManager;->getDeviceId()Ljava/lang/String;",
+  "chain": [
+    { "method": { "dex_signature": "...", "class": "...", "name": "getImei",
+                   "param_types": ["Landroid/content/Context;"], "return_type": "Ljava/lang/String;",
+                   "java_readable": "com.example.session.PhoneInfo.getImei(...)" }},
+    { "method": { "dex_signature": "...", "java_readable": "...TelephonyManager.getDeviceId(...)" }},
+    { "method": { "dex_signature": "...", "java_readable": "...TelephonyManager.getDeviceId(...)" }}
+  ],
+  "depth": 2
+}
+```
+
+### 9. ProGuard/R8 deobfuscation
+
+```bash
+# Deobfuscated output
+dexfinder --dex-file app.apk --query "getDeviceId" --trace --mapping mapping.txt
+
+# Show both original and obfuscated names
+dexfinder --dex-file app.apk --query "getDeviceId" --trace --mapping mapping.txt --show-obf
+```
+```
+com.example.Foo.originalMethod(Foo.java)
+└── com.example.Bar.originalCaller(Bar.java)  [obf: a.b.c]
+```
+
+### 10. Hidden API detection
+
+```bash
+# Download CSV (one-time)
+curl -o hiddenapi-flags.csv \
+  https://dl.google.com/developers/android/baklava/non-sdk/hiddenapi-flags.csv
+
+# Full scan — linking + reflection detection
+dexfinder --dex-file app.apk --api-flags hiddenapi-flags.csv
+```
+```
+#1: Linking unsupported Lsun/misc/Unsafe;->allocateInstance(Ljava/lang/Class;)Ljava/lang/Object; use(s):
+       Lcom/google/gson/internal/UnsafeAllocator;->create()Lcom/google/gson/internal/UnsafeAllocator;
+
+#2: Reflection blocked Landroid/location/ILocationManager;->getCurrentLocation potential use(s):
+       Lcom/example/monitor/LocationMonitor;->hookSystemLocationManager(Landroid/content/Context;)V
+```
+
+### 11. Search string constants (content:// URIs, API keys, etc.)
+
+```bash
+# Find content:// URIs in code
+dexfinder --dex-file app.apk --query "content://com.android.contacts" --scope string
+
+# Include strings only in DEX table (optimized out by R8, annotations, etc.)
 dexfinder --dex-file app.apk --query "content://com.android.contacts" --scope everything
 ```
+```
+[STRING] "content://com.android.contacts/" (1 ref)
+       Lcom/example/imageloader/BaseImageDownloader;->getStreamFromContent(Ljava/lang/String;)Ljava/io/InputStream;
+[STRING_TABLE] "content://com.android.contacts" (in DEX string table, no code reference found)
+```
 
-### Detect hidden API via reflection
+### 12. Filter by class prefix
 
 ```bash
-dexfinder --dex-file app.apk --api-flags hiddenapi-flags.csv | grep ILocationManager
+# Only scan classes in your own package
+dexfinder --dex-file app.apk --query "getDeviceId" --class-filter "Lcom/mycompany/"
+
+# Scan multiple packages
+dexfinder --dex-file app.apk --query "getDeviceId" --class-filter "Lcom/mycompany/,Lcom/mylib/"
 ```
 
-```
-#135: Reflection blocked Landroid/location/ILocationManager;->getCurrentLocation potential use(s):
+### 13. Combine everything
+
+```bash
+# Deobfuscated JSON tree of location API usage, filtered to your code
+dexfinder --dex-file app.apk \
+  --query "android.location.LocationManager#requestLocationUpdates" \
+  --trace --depth 8 \
+  --format json --layout tree --style java \
+  --mapping mapping.txt --show-obf \
+  --class-filter "Lcom/mycompany/"
 ```
 
 ## Performance
 
-Benchmarked on real-world APKs (Apple M-series, single thread):
+Benchmarked on Apple M-series, single thread:
 
-| APK Size | DEX Files | Classes | Method Refs | Scan Time | Hidden API |
+| APK Size | DEX Files | Classes | Method Refs | Scan | Hidden API |
 |---|---|---|---|---|---|
-| ~1MB | 1 | ~2K | ~18K | **24ms** | — |
-| ~10MB | 2 | ~25K | ~100K | **335ms** | — |
-| ~300MB | 30+ | ~180K | ~1.2M | **3.9s** | **5.4s** |
+| ~1 MB | 1 | ~2K | ~18K | **24ms** | — |
+| ~10 MB | 2 | ~25K | ~100K | **335ms** | — |
+| ~300 MB | 30+ | ~180K | ~1.2M | **3.9s** | **5.4s** |
+
+Compared to veridex (C++, imprecise mode) on the same ~300MB APK:
+- veridex precise: **27s** (no reflection via Binder/AIDL)
+- veridex imprecise: **>32 min** (killed, cartesian product explosion)
+- **dexfinder: 5.4s** (reverse-index optimization)
 
 ## All Options
 
-```
---dex-file        APK/DEX/JAR file to analyze (required)
---query           Search keyword
---trace           Trace call chains (requires --query)
---depth           Max call chain depth (default 5)
---layout          Trace layout: tree or list (default tree)
---style           Name style: java or dex (default java)
---format          Output format: text, json, model (default text)
---mapping         ProGuard/R8 mapping.txt for deobfuscation
---show-obf        Show obfuscated names alongside deobfuscated
---api-flags       Path to hiddenapi-flags.csv
---class-filter    Comma-separated class descriptor prefixes
---exclude-api-lists  API lists to exclude from reporting
---scope           Search scope: all, callee, caller, string, string-table, everything
---stats           Show summary statistics only
---version         Show version
-```
+| Flag | Description | Default |
+|---|---|---|
+| `--dex-file` | APK/DEX/JAR file to analyze **(required)** | — |
+| `--query` | Search keyword (Java, DEX/JNI, or simple name) | — |
+| `--trace` | Enable call chain tracing (requires `--query`) | `false` |
+| `--depth` | Max call chain depth | `5` |
+| `--layout` | Trace layout: `tree` or `list` | `tree` |
+| `--style` | Name style: `java` or `dex` | `java` |
+| `--format` | Output format: `text`, `json`, `model` | `text` |
+| `--mapping` | ProGuard/R8 mapping.txt path | — |
+| `--show-obf` | Show obfuscated names alongside deobfuscated | `false` |
+| `--api-flags` | Path to hiddenapi-flags.csv | — |
+| `--class-filter` | Comma-separated class descriptor prefixes | — |
+| `--exclude-api-lists` | API lists to exclude from reporting | — |
+| `--scope` | Search scope: `all`, `callee`, `caller`, `string`, `string-table`, `everything` | `all` |
+| `--stats` | Show summary statistics only | `false` |
+| `--version` | Show version | `false` |
 
 ## Building from Source
 
@@ -276,5 +380,232 @@ go test ./...
 ```
 
 ## License
+
+Apache License 2.0
+
+---
+
+<a name="中文"></a>
+
+# dexfinder
+
+跨平台 APK/DEX 方法与字段引用查找器，支持调用链追踪、ProGuard/R8 反混淆、Android Hidden API 检测。
+
+基于 Android [veridex](https://android.googlesource.com/platform/art/+/refs/heads/master/tools/veridex/) 原理，用 Go 重新实现并增强：更快的反射检测、多层调用链追踪（veridex 仅一层）、灵活的输出格式。
+
+## 特性
+
+- **APK/DEX/JAR 扫描** — 解析 DEX 字节码，提取所有方法/字段/字符串引用
+- **多格式查询** — 支持 Java 类名、DEX/JNI 签名、简单关键字
+- **调用链追踪** — 向上追溯 N 层调用者，合并树或展开列表，自动检测递归环
+- **ProGuard/R8 反混淆** — 加载 mapping.txt，显示原始名称
+- **Hidden API 检测** — 加载 hiddenapi-flags.csv，检测 blocked/unsupported API
+- **反射检测** — 类名×字符串交叉匹配，发现反射调用的隐藏 API（兼容 veridex）
+- **灵活输出** — text / json / model 格式，tree / list 布局，java / dex 命名风格——正交组合
+- **零外部依赖** — 纯 Go 实现，自包含 DEX 解析器
+- **跨平台** — macOS (Intel / Apple Silicon)、Linux (amd64 / arm64)、Windows
+
+## 安装
+
+**Homebrew** (macOS / Linux):
+```bash
+brew tap JuneLeGency/tap
+brew install dexfinder
+```
+
+**脚本安装** (自动检测系统):
+```bash
+curl -sSL https://raw.githubusercontent.com/JuneLeGency/dexfinder/main/install.sh | bash
+```
+
+**Go 安装**:
+```bash
+go install github.com/JuneLeGency/dexfinder/cmd/dexfinder@latest
+```
+
+**二进制下载**: [Releases](https://github.com/JuneLeGency/dexfinder/releases)
+
+## 快速开始
+
+```bash
+# 查看 APK 概况
+dexfinder --dex-file app.apk --stats
+
+# 查找所有 getDeviceId 调用（获取 IMEI）
+dexfinder --dex-file app.apk --query "getDeviceId"
+
+# 追踪调用链（合并树形视图）
+dexfinder --dex-file app.apk --query "getDeviceId" --trace
+
+# 追踪调用链（展开为独立调用栈）
+dexfinder --dex-file app.apk --query "getDeviceId" --trace --layout list
+
+# 用精确 JNI 签名查询
+dexfinder --dex-file app.apk \
+  --query "Landroid/telephony/TelephonyManager;->getDeviceId()Ljava/lang/String;" \
+  --trace --depth 8
+```
+
+## 查询格式 (`--query`)
+
+| 格式 | 示例 | 行为 |
+|---|---|---|
+| 简单名称 | `getDeviceId` | 模糊子串匹配 |
+| Java 类名 | `android.telephony.TelephonyManager` | 匹配该类所有方法 |
+| Java 类名#方法 | `...TelephonyManager#getDeviceId` | 匹配该方法所有重载 |
+| Java 完整签名 | `...#getDeviceId()` | 精确匹配 + 重载回退 |
+| DEX/JNI 签名 | `Landroid/telephony/TelephonyManager;->getDeviceId()Ljava/lang/String;` | 精确匹配 |
+
+## 输出控制
+
+三个独立维度，自由组合：
+
+```
+--format  (text / json / model)     输出什么
+--layout  (tree / list)             怎么排列调用链
+--style   (java / dex)              怎么显示名称
+```
+
+### `--layout` 对比（配合 `--trace`）
+
+**tree** — 合并共同路径，一棵树展示全貌：
+```
+android.telephony.TelephonyManager.getDeviceId()
+└── ...aopsdk...TelephonyManager.getDeviceId(TelephonyManager.java)
+    ├── PhoneInfo.getImei(PhoneInfo.java)
+    ├── ClientIdHelper.initClientId(ClientIdHelper.java)
+    │   └── ContextInfo.<init>(ContextInfo.java)
+    └── DeviceInfo.k(DeviceInfo.java)
+        └── DeviceInfo.getInstance(DeviceInfo.java)
+            ├── TidHelper.getIMEI(TidHelper.java)
+            └── DeviceCollector.collectData(DeviceCollector.java)
+```
+
+**list** — 每条链独立展示（Java crash 风格）：
+```
+--- Call chain #1 ---
+    at PhoneInfo.getImei(PhoneInfo.java)
+    at ...aopsdk...TelephonyManager.getDeviceId(TelephonyManager.java)
+    at android.telephony.TelephonyManager.getDeviceId(TelephonyManager.java)
+
+--- Call chain #2 ---
+    at ContextInfo.<init>(ContextInfo.java)
+    at ClientIdHelper.initClientId(ClientIdHelper.java)
+    at ...aopsdk...TelephonyManager.getDeviceId(TelephonyManager.java)
+    at android.telephony.TelephonyManager.getDeviceId(TelephonyManager.java)
+```
+
+### `--style` 对比
+
+**java** (默认): `com.example.Foo.method(Foo.java)`
+**dex**: `Foo.method(Ljava/lang/String;)V`
+
+### JSON 输出
+
+```bash
+# JSON 树
+dexfinder --dex-file app.apk --query "getDeviceId" --trace --format json
+
+# JSON 列表
+dexfinder --dex-file app.apk --query "getDeviceId" --trace --format json --layout list
+```
+
+## 更多用法
+
+### 反混淆
+
+```bash
+# 显示反混淆名称
+dexfinder --dex-file app.apk --query "getDeviceId" --trace --mapping mapping.txt
+
+# 同时显示混淆和原始名称
+dexfinder --dex-file app.apk --query "getDeviceId" --trace --mapping mapping.txt --show-obf
+```
+
+### Hidden API 检测
+
+```bash
+# 下载 CSV（一次性）
+curl -o hiddenapi-flags.csv \
+  https://dl.google.com/developers/android/baklava/non-sdk/hiddenapi-flags.csv
+
+# 全量检测（直接链接 + 反射检测）
+dexfinder --dex-file app.apk --api-flags hiddenapi-flags.csv
+```
+
+### 字符串搜索
+
+```bash
+# 搜索代码中的 content:// URI
+dexfinder --dex-file app.apk --query "content://com.android.contacts" --scope string
+
+# 包含被 R8 优化掉的字符串（注解、死代码等）
+dexfinder --dex-file app.apk --query "content://com.android.contacts" --scope everything
+```
+
+### 按包名过滤
+
+```bash
+# 只扫描自己的代码
+dexfinder --dex-file app.apk --query "getDeviceId" --class-filter "Lcom/mycompany/"
+```
+
+### 组合使用
+
+```bash
+# 反混淆 + JSON 树形输出 + 定位 API 调用 + 过滤自己的代码
+dexfinder --dex-file app.apk \
+  --query "android.location.LocationManager#requestLocationUpdates" \
+  --trace --depth 8 \
+  --format json --layout tree --style java \
+  --mapping mapping.txt --show-obf \
+  --class-filter "Lcom/mycompany/"
+```
+
+## 性能
+
+Apple M 系列芯片，单线程：
+
+| APK 大小 | DEX 数 | 类数 | 方法引用 | 扫描 | Hidden API |
+|---|---|---|---|---|---|
+| ~1 MB | 1 | ~2K | ~18K | **24ms** | — |
+| ~10 MB | 2 | ~25K | ~100K | **335ms** | — |
+| ~300 MB | 30+ | ~180K | ~1.2M | **3.9s** | **5.4s** |
+
+与 veridex (C++) 在同一 ~300MB APK 上对比：
+- veridex precise: **27s**（无法追踪 Binder/AIDL 反射）
+- veridex imprecise: **>32 分钟**（笛卡尔积爆炸，被 kill）
+- **dexfinder: 5.4s**（反向索引优化）
+
+## 全部参数
+
+| 参数 | 说明 | 默认值 |
+|---|---|---|
+| `--dex-file` | APK/DEX/JAR 文件路径 **（必需）** | — |
+| `--query` | 搜索关键字（Java / DEX/JNI / 简单名称） | — |
+| `--trace` | 启用调用链追踪（需配合 `--query`） | `false` |
+| `--depth` | 调用链最大深度 | `5` |
+| `--layout` | 追踪布局: `tree`（合并树）或 `list`（展开列表） | `tree` |
+| `--style` | 命名风格: `java`（可读）或 `dex`（JNI 签名） | `java` |
+| `--format` | 输出格式: `text`、`json`、`model` | `text` |
+| `--mapping` | ProGuard/R8 mapping.txt 路径 | — |
+| `--show-obf` | 同时显示混淆名和反混淆名 | `false` |
+| `--api-flags` | hiddenapi-flags.csv 路径 | — |
+| `--class-filter` | 类描述符前缀过滤（逗号分隔） | — |
+| `--exclude-api-lists` | 排除的 API 级别 | — |
+| `--scope` | 搜索范围: `all`、`callee`、`caller`、`string`、`string-table`、`everything` | `all` |
+| `--stats` | 仅显示统计摘要 | `false` |
+| `--version` | 显示版本号 | `false` |
+
+## 从源码构建
+
+```bash
+git clone https://github.com/JuneLeGency/dexfinder.git
+cd dexfinder
+go build -o dexfinder ./cmd/dexfinder/
+go test ./...
+```
+
+## 许可证
 
 Apache License 2.0
