@@ -88,7 +88,7 @@ android.telephony.TelephonyManager.getDeviceId()
     │   └── DeviceInfo.<init>() → getInstance()
     │       ├── TidHelper.getIMEI()
     │       ├── TidHelper.getIMSI()
-    ���       └── DeviceCollector.collectData()
+    │       └── DeviceCollector.collectData()
     ├── WXEnvironment.getDevId()
     │   └── WXEnvironment.<clinit>()
     └── ...共 30 条调用链
@@ -141,7 +141,7 @@ dexfinder --dex-file app.apk --query "getDeviceId" --trace --layout list
 
 dexfinder 自动检测输入格式并转换。带参数的精确签名只匹配对应重载，不带参数的匹配所有重载。
 
-## 输出三轴正���
+## 输出三轴正交
 
 ```
 --format  (text / json / model)     输出什么格式
@@ -205,7 +205,7 @@ dexfinder 实现了 veridex 的两种检测模式：
 
 关键优化：veridex 做 `O(classes × strings)` 的笛卡尔积（3 亿次 map 查找），我们用**反向索引**——对每个 boot class 只查它在 CSV 中已知的成员名，复杂度降到 `O(classes × avg_members)`，从 37 秒降到 **0.8 秒**。
 
-## 字符串搜索��R8 优化后也能找到
+## 字符串搜索：R8 优化后也能找到
 
 R8 会把 `static final String URI = "content://contacts"` 内联到调用处。内联后原字段消失，但字符串变成了 `const-string` 指令——dexfinder 两种都能抓住：
 
