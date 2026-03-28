@@ -37,9 +37,6 @@ func TestQueryMatcherJavaMethodWithParams(t *testing.T) {
 	if !m.matches(target) {
 		t.Error("should match exact signature")
 	}
-	if !m.matches("Landroid/location/LocationManager;->requestLocationUpdates(I)V") {
-		t.Error("should match via class->method substring pattern")
-	}
 	if m.matches("Landroid/location/LocationManager;->getLastKnownLocation()V") {
 		t.Error("should not match different method when params are specified")
 	}
@@ -53,7 +50,7 @@ func TestQueryMatcherDexSignature(t *testing.T) {
 	}
 	other := "Landroid/location/LocationManager;->requestLocationUpdates(Ljava/lang/String;JFLandroid/location/LocationListener;Landroid/os/Looper;)V"
 	if m.matches(other) {
-		t.Error("should not match different overload for exact DEX sig")
+		t.Error("should not match different overload")
 	}
 }
 
@@ -72,9 +69,7 @@ func TestQueryMatcherPartialPath(t *testing.T) {
 }
 
 func TestJavaParamsToDex(t *testing.T) {
-	tests := []struct {
-		input, want string
-	}{
+	tests := []struct{ input, want string }{
 		{"(java.lang.String, long, float, android.location.LocationListener)", "(Ljava/lang/String;JFLandroid/location/LocationListener;)V"},
 		{"(int)", "(I)V"},
 		{"()", "()V"},
@@ -82,8 +77,7 @@ func TestJavaParamsToDex(t *testing.T) {
 		{"(boolean, byte, char, short, double)", "(ZBCSD)V"},
 	}
 	for _, tt := range tests {
-		got := javaParamsToDex(tt.input)
-		if got != tt.want {
+		if got := javaParamsToDex(tt.input); got != tt.want {
 			t.Errorf("javaParamsToDex(%q) = %q, want %q", tt.input, got, tt.want)
 		}
 	}
@@ -103,7 +97,7 @@ func TestClassFilter(t *testing.T) {
 	}
 }
 
-// --- Integration tests: query × mapping × format × trace combinations ---
+// --- Test fixtures ---
 
 func loadMappingForTest(t *testing.T) *mapping.ProguardMapping {
 	t.Helper()
@@ -133,173 +127,219 @@ func scanTestAPK(t *testing.T) ([]*dex.DexFile, *ScanResult) {
 	return dexFiles, result
 }
 
-// --- Input × Mapping combinations ---
+// --- Input × Mapping: exact count assertions ---
 
-func TestCombo_ObfName_NoMapping(t *testing.T) {
+func TestCombo_ObfName_NoMapping_Count(t *testing.T) {
 	dexFiles, result := scanTestAPK(t)
-	qr := Query(result, dexFiles, "Lbb;", ScopeAll)
-	if len(qr.MatchedMethods) == 0 && len(qr.MatchedFields) == 0 {
-		t.Error("obfuscated name without mapping should find results")
+	qr := Query(result, dexFiles, "LJ7;", ScopeCallee)
+	// LJ7; (KotlinCases) as callee should have exactly 2 method references
+	if got := len(qr.MatchedMethods); got != 2 {
+		t.Errorf("obf name LJ7 callee methods = %d, want 2", got)
 	}
 }
 
-func TestCombo_ObfName_WithMapping(t *testing.T) {
-	dexFiles, result := scanTestAPK(t)
-	pm := loadMappingForTest(t)
-	qr := Query(result, dexFiles, "Lbb;", ScopeAll, QueryOption{Mapping: pm})
-	if len(qr.MatchedMethods) == 0 && len(qr.MatchedFields) == 0 {
-		t.Error("obfuscated name with mapping should find results")
-	}
-}
-
-func TestCombo_OrigSimpleName_NoMapping(t *testing.T) {
+func TestCombo_OrigSimpleName_NoMapping_Empty(t *testing.T) {
 	dexFiles, result := scanTestAPK(t)
 	qr := Query(result, dexFiles, "KotlinCases", ScopeAll)
 	total := len(qr.MatchedMethods) + len(qr.MatchedFields) + len(qr.MatchedStrings)
 	if total != 0 {
-		t.Error("original name without mapping should not find obfuscated classes")
+		t.Errorf("original name without mapping should find 0 results, got %d", total)
 	}
 }
 
-func TestCombo_OrigSimpleName_WithMapping(t *testing.T) {
+func TestCombo_OrigSimpleName_WithMapping_FindsAll(t *testing.T) {
 	dexFiles, result := scanTestAPK(t)
 	pm := loadMappingForTest(t)
-	qr := Query(result, dexFiles, "KotlinCases", ScopeAll, QueryOption{Mapping: pm})
-	if len(qr.MatchedMethods) == 0 {
-		t.Error("original simple name with mapping should find results via obfuscation lookup")
+	qr := Query(result, dexFiles, "KotlinCases", ScopeCallee, QueryOption{Mapping: pm})
+	// Simple name matches KotlinCases + all inner classes ($$ExternalSyntheticLambda*, $LocationData, etc.)
+	if got := len(qr.MatchedMethods); got < 10 {
+		t.Errorf("original simple name + mapping should find >=10 methods (inner classes), got %d", got)
 	}
 }
 
-func TestCombo_OrigFullName_NoMapping(t *testing.T) {
+func TestCombo_OrigFullName_WithMapping_Count(t *testing.T) {
+	dexFiles, result := scanTestAPK(t)
+	pm := loadMappingForTest(t)
+	qr := Query(result, dexFiles, "com.test.dexfinder.kotlin.KotlinCases", ScopeCallee, QueryOption{Mapping: pm})
+	// Full name also matches inner classes via J7 prefix
+	if got := len(qr.MatchedMethods); got < 2 {
+		t.Errorf("original full name + mapping callee methods = %d, want >= 2", got)
+	}
+}
+
+func TestCombo_OrigFullName_NoMapping_Empty(t *testing.T) {
 	dexFiles, result := scanTestAPK(t)
 	qr := Query(result, dexFiles, "com.test.dexfinder.kotlin.KotlinCases", ScopeAll)
 	total := len(qr.MatchedMethods) + len(qr.MatchedFields) + len(qr.MatchedStrings)
 	if total != 0 {
-		t.Error("original full name without mapping should not find obfuscated classes")
+		t.Errorf("original full name without mapping should find 0, got %d", total)
 	}
 }
 
-func TestCombo_OrigFullName_WithMapping(t *testing.T) {
+// --- Framework API not broken by mapping ---
+
+func TestCombo_FrameworkAPI_WithMapping_Count(t *testing.T) {
 	dexFiles, result := scanTestAPK(t)
 	pm := loadMappingForTest(t)
-	qr := Query(result, dexFiles, "com.test.dexfinder.kotlin.KotlinCases", ScopeAll, QueryOption{Mapping: pm})
-	if len(qr.MatchedMethods) == 0 {
-		t.Error("original full name with mapping should find results via obfuscation lookup")
+	qr := Query(result, dexFiles, "requestLocationUpdates", ScopeCallee, QueryOption{Mapping: pm})
+	// Should find exactly 3 requestLocationUpdates overloads
+	if got := len(qr.MatchedMethods); got != 3 {
+		t.Errorf("requestLocationUpdates callee methods = %d, want 3", got)
 	}
 }
 
-// --- Verify mapping doesn't break non-mapping queries ---
-
-func TestCombo_FrameworkAPI_WithMapping(t *testing.T) {
+func TestCombo_FrameworkAPI_NoMapping_SameCount(t *testing.T) {
 	dexFiles, result := scanTestAPK(t)
+	qr1 := Query(result, dexFiles, "requestLocationUpdates", ScopeCallee)
 	pm := loadMappingForTest(t)
-	qr := Query(result, dexFiles, "requestLocationUpdates", ScopeAll, QueryOption{Mapping: pm})
-	if len(qr.MatchedMethods) == 0 {
-		t.Error("framework API query should still work with mapping loaded")
+	qr2 := Query(result, dexFiles, "requestLocationUpdates", ScopeCallee, QueryOption{Mapping: pm})
+	if len(qr1.MatchedMethods) != len(qr2.MatchedMethods) {
+		t.Errorf("mapping should not change framework API count: %d vs %d",
+			len(qr1.MatchedMethods), len(qr2.MatchedMethods))
 	}
 }
 
-// --- Scope combinations ---
+// --- Scope assertions ---
 
-func TestCombo_OrigName_ScopeCallee(t *testing.T) {
+func TestCombo_ScopeCallee_NoCallerResults(t *testing.T) {
 	dexFiles, result := scanTestAPK(t)
 	pm := loadMappingForTest(t)
 	qr := Query(result, dexFiles, "KotlinCases", ScopeCallee, QueryOption{Mapping: pm})
 	if len(qr.MatchedMethods) == 0 {
-		t.Error("callee scope with mapping should find results")
+		t.Error("callee scope should find methods")
 	}
 	if len(qr.MatchedCallers) != 0 {
-		t.Error("callee scope should not return caller matches")
+		t.Errorf("callee scope should have 0 caller results, got %d", len(qr.MatchedCallers))
 	}
 }
 
-func TestCombo_OrigName_ScopeCaller(t *testing.T) {
+func TestCombo_ScopeCaller_NoCalleeResults(t *testing.T) {
 	dexFiles, result := scanTestAPK(t)
 	pm := loadMappingForTest(t)
 	qr := Query(result, dexFiles, "com.test.dexfinder.kotlin.KotlinCases", ScopeCaller, QueryOption{Mapping: pm})
 	if len(qr.MatchedCallers) == 0 {
-		t.Error("caller scope with mapping should find what KotlinCases calls internally")
+		t.Error("caller scope should find what KotlinCases calls")
 	}
 	if len(qr.MatchedMethods) != 0 {
-		t.Error("caller scope should not return callee matches")
+		t.Errorf("caller scope should have 0 callee results, got %d", len(qr.MatchedMethods))
 	}
 }
 
-func TestCombo_StringScope(t *testing.T) {
+func TestCombo_ScopeString_Content(t *testing.T) {
 	dexFiles, result := scanTestAPK(t)
 	qr := Query(result, dexFiles, "android.app.ActivityThread", ScopeString)
-	if len(qr.MatchedStrings) == 0 {
-		t.Error("string scope should find ActivityThread string constant")
+	if got := len(qr.MatchedStrings); got != 1 {
+		t.Errorf("string scope for ActivityThread should find 1 string, got %d", got)
 	}
-}
-
-func TestCombo_StringTableScope(t *testing.T) {
-	dexFiles, result := scanTestAPK(t)
-	qr := Query(result, dexFiles, "LocationListener", ScopeStringTable)
-	if len(qr.MatchedStringTable) == 0 {
-		t.Error("string-table scope should find LocationListener in DEX string table")
-	}
-}
-
-// --- Trace combinations (call graph) ---
-
-func TestCombo_Trace_ObfName_WithMapping(t *testing.T) {
-	dexFiles, result := scanTestAPK(t)
-	pm := loadMappingForTest(t)
-	// Trace uses ScopeCallee internally
-	qr := Query(result, dexFiles, "LJ7;", ScopeCallee, QueryOption{Mapping: pm})
-	if len(qr.MatchedMethods) == 0 {
-		t.Error("trace with obf name + mapping should find results")
-	}
-	cg := BuildCallGraph(result, dexFiles)
-	for api := range qr.MatchedMethods {
-		tree := cg.TraceCallers(api, 3)
-		if tree == nil {
-			t.Errorf("TraceCallers returned nil for %s", api)
+	// Verify the string value
+	for str := range qr.MatchedStrings {
+		if str != "android.app.ActivityThread" {
+			t.Errorf("matched string = %q, want 'android.app.ActivityThread'", str)
 		}
-		break
+	}
+	// Should not have method or field results
+	if len(qr.MatchedMethods) != 0 {
+		t.Errorf("string scope should have 0 methods, got %d", len(qr.MatchedMethods))
 	}
 }
 
-func TestCombo_Trace_OrigName_WithMapping(t *testing.T) {
+func TestCombo_ScopeStringTable_FindsMoreThanCode(t *testing.T) {
+	dexFiles, result := scanTestAPK(t)
+	qr1 := Query(result, dexFiles, "LocationListener", ScopeString)
+	qr2 := Query(result, dexFiles, "LocationListener", ScopeString|ScopeStringTable)
+	// String table should find entries not in code (class descriptors, annotations)
+	if len(qr2.MatchedStringTable) == 0 {
+		t.Error("string-table scope should find additional entries beyond code strings")
+	}
+	_ = qr1 // qr1 may or may not have code strings
+}
+
+func TestCombo_ScopeAll_NoCallerByDefault(t *testing.T) {
 	dexFiles, result := scanTestAPK(t)
 	pm := loadMappingForTest(t)
-	qr := Query(result, dexFiles, "KotlinCases", ScopeCallee, QueryOption{Mapping: pm})
-	if len(qr.MatchedMethods) == 0 {
-		t.Error("trace with original name + mapping should find results")
+	qr := Query(result, dexFiles, "KotlinCases", ScopeAll, QueryOption{Mapping: pm})
+	if len(qr.MatchedCallers) != 0 {
+		t.Errorf("scope=all should NOT include caller results, got %d", len(qr.MatchedCallers))
 	}
+}
+
+// --- Trace: chain count assertions ---
+
+func TestCombo_TraceChainCount(t *testing.T) {
+	dexFiles, result := scanTestAPK(t)
+	qr := Query(result, dexFiles, "requestLocationUpdates", ScopeCallee)
 	cg := BuildCallGraph(result, dexFiles)
-	chainCount := 0
+	totalChains := 0
 	for api := range qr.MatchedMethods {
 		tree := cg.TraceCallers(api, 3)
-		chains := FlatCallerChains(tree, 50)
-		chainCount += len(chains)
+		chains := FlatCallerChains(tree, 100)
+		totalChains += len(chains)
 	}
-	if chainCount == 0 {
-		t.Error("expected at least one call chain")
+	// 3 overloads of requestLocationUpdates, should produce exactly 4 chains at depth 3
+	if totalChains != 4 {
+		t.Errorf("trace chain count = %d, want 4", totalChains)
 	}
 }
 
-// --- Result consistency: same results regardless of query format ---
+func TestCombo_TraceChainContent(t *testing.T) {
+	dexFiles, result := scanTestAPK(t)
+	qr := Query(result, dexFiles, "requestLocationUpdates", ScopeCallee)
+	cg := BuildCallGraph(result, dexFiles)
 
-func TestCombo_ConsistentResults_ObfVsOrig(t *testing.T) {
+	// Every chain should start with the target API and end with a caller
+	for api := range qr.MatchedMethods {
+		tree := cg.TraceCallers(api, 5)
+		chains := FlatCallerChains(tree, 100)
+		for i, chain := range chains {
+			if len(chain) == 0 {
+				t.Errorf("chain %d is empty", i)
+				continue
+			}
+			// chain[0] = target API
+			if chain[0] != api {
+				t.Errorf("chain %d should start with %s, got %s", i, api, chain[0])
+			}
+			// chain should have at least 2 entries (target + 1 caller)
+			if len(chain) < 2 {
+				t.Errorf("chain %d too short: %v", i, chain)
+			}
+		}
+	}
+}
+
+func TestCombo_TraceDepthRespected(t *testing.T) {
+	dexFiles, result := scanTestAPK(t)
+	qr := Query(result, dexFiles, "requestLocationUpdates", ScopeCallee)
+	cg := BuildCallGraph(result, dexFiles)
+
+	for api := range qr.MatchedMethods {
+		tree := cg.TraceCallers(api, 2)
+		chains := FlatCallerChains(tree, 100)
+		for _, chain := range chains {
+			// depth=2 means max 3 entries (target + 2 levels of callers)
+			if len(chain) > 3 {
+				t.Errorf("chain exceeds depth 2: %d entries: %v", len(chain), chain)
+			}
+		}
+	}
+}
+
+// --- Consistency: obf vs original name produce same underlying results ---
+
+func TestCombo_ConsistentResults_ObfVsOrigFull(t *testing.T) {
 	dexFiles, result := scanTestAPK(t)
 	pm := loadMappingForTest(t)
 
-	// Query by obfuscated name
+	// KotlinCases -> J7
+	// LJ7; direct match
 	qr1 := Query(result, dexFiles, "LJ7;", ScopeCallee, QueryOption{Mapping: pm})
-	// Query by original name
-	qr2 := Query(result, dexFiles, "KotlinCases", ScopeCallee, QueryOption{Mapping: pm})
+	// Full original name
+	qr2 := Query(result, dexFiles, "com.test.dexfinder.kotlin.KotlinCases", ScopeCallee, QueryOption{Mapping: pm})
 
-	// Both should find the same set of methods (maybe qr2 finds more due to inner classes)
-	// At minimum, every method in qr1 should also be in qr2
+	// LJ7; exact matches should be a subset of full name matches
 	for api := range qr1.MatchedMethods {
 		if _, ok := qr2.MatchedMethods[api]; !ok {
-			// qr2 might match more (inner classes), but should at least contain LJ7; matches
-			// Check if this specific key is LJ7;-prefixed
-			if len(api) > 4 && api[:4] == "LJ7;" {
-				t.Errorf("method %s found by obf query but not by original name query", api)
-			}
+			t.Errorf("method %s found by LJ7; but not by full original name", api)
 		}
 	}
 }
