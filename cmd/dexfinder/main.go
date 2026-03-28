@@ -23,7 +23,7 @@ var version = "dev"
 var (
 	flagDexFile     = flag.String("dex-file", "", "APK/DEX/JAR file to analyze (required)")
 	flagQuery       = flag.String("query", "", "Search keyword (Java-style, DEX/JNI-style, or simple name)")
-	flagFormat      = flag.String("format", "text", "Output format: text, json, stacktrace, model")
+	flagFormat      = flag.String("format", "text", "Output format: text, tree, list, stacktrace, json, model")
 	flagFlagsFile   = flag.String("api-flags", "", "Path to hiddenapi-flags.csv (enables hidden API detection)")
 	flagClassFilter = flag.String("class-filter", "", "Comma-separated class descriptor prefixes to include")
 	flagExclude     = flag.String("exclude-api-lists", "", "Comma-separated API lists to exclude from reporting")
@@ -56,9 +56,11 @@ QUERY FORMATS (--query):
   DEX/JNI sig         Landroid/location/LocationManager;->requestLocationUpdates(Ljava/lang/String;JFLandroid/location/LocationListener;)V
 
 OUTPUT FORMATS (--format):
-  text         Plain text with [METHOD]/[FIELD]/[STRING] tags (default)
+  text         DEX signatures + tree (default)
+  tree         Java-readable names + merged tree (recommended with --trace)
+  list         Java-readable names + flat chain list
+  stacktrace   Alias for list (Java crash stacktrace style)
   json         Simple JSON output
-  stacktrace   Java crash stacktrace style (--trace mode)
   model        Structured JSON with full type info (for IDE/CI integration)
 
 SEARCH SCOPE (--scope):

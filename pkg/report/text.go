@@ -88,9 +88,15 @@ func DumpTrace(w io.Writer, result *finder.ScanResult, dexFiles []*dex.DexFile, 
 
 	cg := finder.BuildCallGraph(result, dexFiles)
 
-	if dc != nil && dc.Format == FormatStacktrace {
+	switch {
+	case dc != nil && (dc.Format == FormatStacktrace || dc.Format == FormatList):
+		// Flat list of individual call chains (Java crash style)
 		dumpTraceStacktrace(w, qr, cg, maxDepth, dc)
-	} else {
+	case dc != nil && dc.Format == FormatTree:
+		// Merged tree with Java-readable names
+		dumpTraceJavaTree(w, qr, cg, maxDepth, dc)
+	default:
+		// DEX-style tree (original text format)
 		dumpTraceTree(w, qr, cg, maxDepth, dc)
 	}
 }
@@ -118,6 +124,54 @@ func dumpTraceTree(w io.Writer, qr *finder.QueryResult, cg *finder.CallGraph, ma
 			printTreeWithMapping(w, tree, "", true, dc)
 		}
 		fmt.Fprintln(w)
+	}
+}
+
+func dumpTraceJavaTree(w io.Writer, qr *finder.QueryResult, cg *finder.CallGraph, maxDepth int, dc *DisplayConfig) {
+	apis := sortedKeys(qr.MatchedMethods)
+	for _, api := range apis {
+		fmt.Fprintf(w, "%s\n", dc.FormatStacktraceTarget(api))
+		tree := cg.TraceCallers(api, maxDepth)
+		if len(tree.Callers) == 0 {
+			fmt.Fprintln(w, "  (no callers found)")
+		} else {
+			printJavaTree(w, tree, "", dc)
+		}
+		fmt.Fprintln(w)
+	}
+
+	fieldAPIs := sortedFieldKeys(qr.MatchedFields)
+	for _, api := range fieldAPIs {
+		fmt.Fprintf(w, "%s\n", dc.FormatStacktraceTarget(api))
+		tree := cg.TraceCallers(api, maxDepth)
+		if len(tree.Callers) == 0 {
+			fmt.Fprintln(w, "  (no callers found)")
+		} else {
+			printJavaTree(w, tree, "", dc)
+		}
+		fmt.Fprintln(w)
+	}
+}
+
+func printJavaTree(w io.Writer, node *finder.CallChainNode, prefix string, dc *DisplayConfig) {
+	for i, caller := range node.Callers {
+		isLast := i == len(node.Callers)-1
+		connector := "├── "
+		if isLast {
+			connector = "└── "
+		}
+		label := dc.FormatStacktraceLine(caller.Method)
+		if caller.IsCycle {
+			label += " ⟳ [recursive]"
+		}
+		fmt.Fprintf(w, "%s%s%s\n", prefix, connector, label)
+		if !caller.IsCycle {
+			childPrefix := prefix + "│   "
+			if isLast {
+				childPrefix = prefix + "    "
+			}
+			printJavaTree(w, caller, childPrefix, dc)
+		}
 	}
 }
 

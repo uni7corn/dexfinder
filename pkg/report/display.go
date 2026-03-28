@@ -10,10 +10,12 @@ import (
 type OutputFormat string
 
 const (
-	FormatText       OutputFormat = "text"
-	FormatJSON       OutputFormat = "json"
-	FormatStacktrace OutputFormat = "stacktrace"
-	FormatTree       OutputFormat = "tree" // alias for text trace
+	FormatText       OutputFormat = "text"       // DEX signatures + tree (--trace)
+	FormatJSON       OutputFormat = "json"       // simple JSON
+	FormatStacktrace OutputFormat = "stacktrace" // Java crash style, flat list of chains
+	FormatTree       OutputFormat = "tree"       // Java readable names + tree (merged paths)
+	FormatList       OutputFormat = "list"       // Java readable names + flat list of chains
+	FormatModel      OutputFormat = "model"      // structured JSON for IDE/CI
 )
 
 // DisplayConfig controls how API signatures are displayed.
