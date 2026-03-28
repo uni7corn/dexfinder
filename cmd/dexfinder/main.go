@@ -31,9 +31,9 @@ var (
 	flagExclude     = flag.String("exclude-api-lists", "", "Comma-separated API lists to exclude from reporting")
 	flagShowStats   = flag.Bool("stats", false, "Show summary statistics only")
 	flagTrace       = flag.Bool("trace", false, "Trace call chains for matched APIs (requires --query)")
-	flagDepth       = flag.Int("depth", 5, "Max call chain depth for --trace (default 5)")
+	flagDepth       = flag.Int("depth", 5, "Max call chain depth for --trace")
 	flagMapping     = flag.String("mapping", "", "ProGuard/R8 mapping.txt for deobfuscation")
-	flagShowObf     = flag.Bool("show-obf", false, "Show obfuscated names alongside deobfuscated")
+	flagShowObf     = flag.Bool("show-obf", false, "Show obfuscated names alongside deobfuscated (requires --mapping)")
 	flagScope       = flag.String("scope", "all", "Search scope: all, callee, caller, string, string-table, everything")
 	flagVersion     = flag.Bool("version", false, "Show version")
 )
@@ -45,58 +45,66 @@ func main() {
 USAGE:
   dexfinder --dex-file <path> [options]
 
-MODES:
-  scan         (default) List all method/field references
-  hidden-api   Detect hidden API usage (requires --api-flags)
-  trace        Trace call chains (--trace --query=...)
+  The tool auto-selects mode based on flags:
+    (default)        Scan and list references matching --query
+    --trace          Trace call chains (requires --query)
+    --api-flags      Detect hidden API usage (linking + reflection)
 
-QUERY FORMATS (--query):
-  Simple name         requestLocationUpdates
-  Java class          android.location.LocationManager
-  Java class#method   android.location.LocationManager#requestLocationUpdates
-  Java full sig       ...#requestLocationUpdates(java.lang.String, long, float, android.location.LocationListener)
-  DEX/JNI sig         Landroid/location/LocationManager;->requestLocationUpdates(Ljava/lang/String;JFLandroid/location/LocationListener;)V
+QUERY (--query):
+  Accepts multiple formats, auto-detected:
+    getDeviceId                                          simple name (fuzzy)
+    android.telephony.TelephonyManager                   Java class (all methods)
+    android.telephony.TelephonyManager#getDeviceId       Java class#method (all overloads)
+    ...TelephonyManager#getDeviceId()                    Java with params (exact + fallback)
+    Landroid/telephony/TelephonyManager;->getDeviceId()Ljava/lang/String;   DEX/JNI (exact)
 
-OUTPUT FORMATS (--format):
-  text         Plain text (default)
-  json         Simple JSON
-  model        Structured JSON with full type info (for IDE/CI)
+OUTPUT (--format):
+    text     Plain text with [METHOD]/[FIELD]/[STRING] tags (default)
+    json     JSON output; with --trace supports tree/list layout
+    model    Structured JSON with MethodInfo/FieldInfo types (for IDE/CI)
 
-TRACE OPTIONS (--trace):
-  --layout tree   Merged tree — shared paths collapsed (default)
-  --layout list   Flat list — each chain shown independently
-  --style  java   Java readable names (default): com.foo.Bar.method(Bar.java)
-  --style  dex    DEX/JNI signatures: Bar.method(Ljava/lang/String;)V
+TRACE (--trace, requires --query):
+    --layout tree    Merged tree — shared paths collapsed (default)
+    --layout list    Flat list — each call chain shown independently
+    --style  java    Java names: com.foo.Bar.method(Bar.java) (default)
+    --style  dex     DEX signatures: Bar.method(Ljava/lang/String;)V
+    --depth  N       Max call chain depth (default 5)
+  Note: --layout and --style only affect --trace output.
 
-SEARCH SCOPE (--scope):
-  all            Callee + fields + code strings (default)
-  callee         Who calls this method?
-  caller         What does this method call internally?
-  string         Only string constants in code
-  string-table   Code strings + full DEX string table
-  everything     All of the above (callee + caller + strings + string table)
+SCOPE (--scope):
+    all              Who calls this API? + string matches (default)
+    callee           Who calls this API? (method/field references only)
+    caller           What does this method call internally? (reverse direction)
+    string           String constants in code (const-string instructions)
+    string-table     Code strings + full DEX string table (annotations, dead code)
+    everything       All of the above
+
+DEOBFUSCATION (--mapping):
+    --mapping mapping.txt    Load ProGuard/R8 mapping for name deobfuscation
+    --show-obf               Show both original and obfuscated names (requires --mapping)
+
+HIDDEN API (--api-flags):
+    --api-flags hiddenapi-flags.csv    Detect blocked/unsupported API usage
+    --exclude-api-lists sdk,unsupported    Skip these restriction levels in output
+      Valid levels: sdk, unsupported, blocked, max-target-o/p/q/r/s
+
+CLASS FILTER (--class-filter):
+    Comma-separated DEX class descriptor prefixes. Only scan classes matching these.
+    Format: use L prefix and / separator.
+    Example: --class-filter "Lcom/mycompany/,Lcom/mylib/"
 
 EXAMPLES:
-  # Scan APK and show stats
   dexfinder --dex-file app.apk --stats
-
-  # Find all location API calls
-  dexfinder --dex-file app.apk --query "requestLocationUpdates"
-
-  # Trace call chains with Java crash style
-  dexfinder --dex-file app.apk --query "requestLocationUpdates" --trace --format stacktrace
-
-  # With mapping deobfuscation
-  dexfinder --dex-file app.apk --query "requestLocationUpdates" --trace --mapping mapping.txt --show-obf
-
-  # Hidden API detection (download CSV from Google first)
+  dexfinder --dex-file app.apk --query "getDeviceId"
+  dexfinder --dex-file app.apk --query "getDeviceId" --trace --depth 8
+  dexfinder --dex-file app.apk --query "getDeviceId" --trace --layout list
+  dexfinder --dex-file app.apk --query "getDeviceId" --trace --format json
+  dexfinder --dex-file app.apk --query "getDeviceId" --trace --mapping mapping.txt --show-obf
+  dexfinder --dex-file app.apk --query "getDeviceId" --scope caller
+  dexfinder --dex-file app.apk --query "content://contacts" --scope string-table
   dexfinder --dex-file app.apk --api-flags hiddenapi-flags.csv
-
-  # Structured output for CI/IDE
-  dexfinder --dex-file app.apk --query "LocationManager" --trace --format model
-
-  # Search content:// URIs including dead code strings
-  dexfinder --dex-file app.apk --query "content://com.android.contacts" --scope everything
+  dexfinder --dex-file app.apk --api-flags hiddenapi-flags.csv --exclude-api-lists sdk
+  dexfinder --dex-file app.apk --query "getDeviceId" --class-filter "Lcom/mycompany/"
 
 OPTIONS:
 `, version)
