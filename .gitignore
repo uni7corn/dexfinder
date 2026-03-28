@@ -1,7 +1,7 @@
-# Binary
-dexfinder
-dexfinder.exe
-dist/
+# Binary (root only, not cmd/dexfinder/)
+/dexfinder
+/dexfinder.exe
+/dist/
 
 # Go
 *.test
