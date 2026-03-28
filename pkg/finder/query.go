@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"dex_method_finder/pkg/dex"
+	"dex_method_finder/pkg/mapping"
 )
 
 // QueryScope defines what to search in.
@@ -17,6 +18,11 @@ const (
 	ScopeAll         = ScopeCallee | ScopeString                   // default: callee + strings (no caller)
 	ScopeEverything  = ScopeCallee | ScopeCaller | ScopeString | ScopeStringTable
 )
+
+// QueryOption configures query behavior.
+type QueryOption struct {
+	Mapping *mapping.ProguardMapping
+}
 
 // QueryResult holds matched items from a query.
 type QueryResult struct {
@@ -281,7 +287,8 @@ func dexToJavaStyle(dexSig string) string {
 }
 
 // Query searches through scan results with flexible matching.
-func Query(result *ScanResult, dexFiles []*dex.DexFile, query string, scope QueryScope) *QueryResult {
+// If mapping is provided, the query is also converted from original→obfuscated names for matching.
+func Query(result *ScanResult, dexFiles []*dex.DexFile, query string, scope QueryScope, opts ...QueryOption) *QueryResult {
 	qr := &QueryResult{
 		MatchedMethods: make(map[string][]MethodRef),
 		MatchedCallers: make(map[string][]MethodRef),
@@ -296,6 +303,54 @@ func Query(result *ScanResult, dexFiles []*dex.DexFile, query string, scope Quer
 	}
 
 	matcher := newQueryMatcher(query)
+
+	// If mapping is provided, also generate obfuscated form of the query
+	// so users can search by original (unobfuscated) names
+	if len(opts) > 0 && opts[0].Mapping != nil {
+		pm := opts[0].Mapping
+		origPatterns := make([]string, len(matcher.patterns))
+		copy(origPatterns, matcher.patterns)
+
+		for _, p := range origPatterns {
+			if strings.Contains(p, "->") {
+				// Full DEX signature: obfuscate it
+				obf := pm.ObfuscateDexSignature(p)
+				if obf != p {
+					matcher.patterns = append(matcher.patterns, obf)
+				}
+			} else if strings.HasPrefix(p, "L") && strings.HasSuffix(p, ";") {
+				// DEX class descriptor: obfuscate it
+				obf := pm.ObfuscateDexSignature(p)
+				if obf != p {
+					matcher.patterns = append(matcher.patterns, obf)
+				}
+			} else if strings.Contains(p, "/") {
+				// Slash path like "com/test/Foo" → try as class descriptor
+				obf := pm.ObfuscateDexSignature("L" + p + ";")
+				if obf != "L"+p+";" {
+					obfInner := strings.TrimPrefix(obf, "L")
+					obfInner = strings.TrimSuffix(obfInner, ";")
+					matcher.patterns = append(matcher.patterns, obfInner)
+					matcher.patterns = append(matcher.patterns, obf)
+				}
+			} else if strings.Contains(p, ".") && !strings.Contains(p, " ") {
+				// Java-style name like "com.test.dexfinder.kotlin.KotlinCases"
+				obfClass := pm.ObfuscateClass(p)
+				if obfClass != p {
+					matcher.patterns = append(matcher.patterns, obfClass)
+					matcher.patterns = append(matcher.patterns, "L"+strings.ReplaceAll(obfClass, ".", "/")+";")
+				}
+			} else {
+				// Simple name like "KotlinCases" or "StaticCases"
+				// Search mapping for classes whose simple name matches
+				obfClasses := pm.FindObfuscatedBySimpleName(p)
+				for _, obf := range obfClasses {
+					matcher.patterns = append(matcher.patterns, obf)
+					matcher.patterns = append(matcher.patterns, "L"+strings.ReplaceAll(obf, ".", "/")+";")
+				}
+			}
+		}
+	}
 
 	// Search method references (callee)
 	if scope&ScopeCallee != 0 {

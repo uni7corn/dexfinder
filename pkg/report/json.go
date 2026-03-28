@@ -107,7 +107,11 @@ type JSONNode struct {
 
 // DumpTraceJSON writes trace results as JSON.
 func DumpTraceJSON(w io.Writer, result *finder.ScanResult, dexFiles []*dex.DexFile, query string, maxDepth int, dc *DisplayConfig) error {
-	qr := finder.Query(result, dexFiles, query, finder.ScopeCallee)
+	var opts []finder.QueryOption
+	if dc != nil && dc.Mapping != nil {
+		opts = append(opts, finder.QueryOption{Mapping: dc.Mapping})
+	}
+	qr := finder.Query(result, dexFiles, query, finder.ScopeCallee, opts...)
 	cg := finder.BuildCallGraph(result, dexFiles)
 
 	report := JSONTraceReport{}

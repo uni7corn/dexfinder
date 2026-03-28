@@ -374,6 +374,27 @@ func (pm *ProguardMapping) Size() int {
 	return len(pm.classToObf)
 }
 
+// FindObfuscatedBySimpleName finds obfuscated class names where the original class
+// simple name (last segment after '.') matches the given name.
+// Returns all matches since multiple classes could share the same simple name.
+func (pm *ProguardMapping) FindObfuscatedBySimpleName(simpleName string) []string {
+	var results []string
+	for orig, obf := range pm.classToObf {
+		// Extract simple name: "com.example.Foo" → "Foo", "com.example.Foo$Bar" → "Foo$Bar"
+		lastDot := strings.LastIndex(orig, ".")
+		var simple string
+		if lastDot != -1 {
+			simple = orig[lastDot+1:]
+		} else {
+			simple = orig
+		}
+		if simple == simpleName || strings.HasPrefix(simple, simpleName+"$") {
+			results = append(results, obf)
+		}
+	}
+	return results
+}
+
 // --- Internal helpers ---
 
 func (pm *ProguardMapping) deobfDexClass(dexClass string) string {

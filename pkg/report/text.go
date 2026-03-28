@@ -12,8 +12,12 @@ import (
 )
 
 // DumpScan outputs scan results in text format (scan mode, no CSV needed).
-func DumpScan(w io.Writer, result *finder.ScanResult, dexFiles []*dex.DexFile, query string, scope finder.QueryScope) {
-	qr := finder.Query(result, dexFiles, query, scope)
+func DumpScan(w io.Writer, result *finder.ScanResult, dexFiles []*dex.DexFile, query string, scope finder.QueryScope, dc *DisplayConfig) {
+	var opts []finder.QueryOption
+	if dc != nil && dc.Mapping != nil {
+		opts = append(opts, finder.QueryOption{Mapping: dc.Mapping})
+	}
+	qr := finder.Query(result, dexFiles, query, scope, opts...)
 
 	// Matched methods (by callee API name)
 	apis := sortedKeys(qr.MatchedMethods)
@@ -79,7 +83,11 @@ func DumpTrace(w io.Writer, result *finder.ScanResult, dexFiles []*dex.DexFile, 
 		return
 	}
 
-	qr := finder.Query(result, dexFiles, query, finder.ScopeCallee)
+	var opts []finder.QueryOption
+	if dc != nil && dc.Mapping != nil {
+		opts = append(opts, finder.QueryOption{Mapping: dc.Mapping})
+	}
+	qr := finder.Query(result, dexFiles, query, finder.ScopeCallee, opts...)
 
 	if len(qr.MatchedMethods) == 0 && len(qr.MatchedFields) == 0 {
 		fmt.Fprintf(w, "No matching APIs found for: %s\n", query)

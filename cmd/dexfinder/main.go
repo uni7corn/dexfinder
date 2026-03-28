@@ -249,7 +249,7 @@ OPTIONS:
 		if *flagFormat == "json" {
 			report.DumpJSON(bw, result, dexFiles, *flagQuery)
 		} else {
-			report.DumpScan(bw, result, dexFiles, *flagQuery, scope)
+			report.DumpScan(bw, result, dexFiles, *flagQuery, scope, dc)
 		}
 	}
 
@@ -265,7 +265,11 @@ func outputModel(bw *bufio.Writer, result *finder.ScanResult, dexFiles []*dex.De
 		MappingFile: *flagMapping,
 		FlagsFile:   *flagFlagsFile,
 	}
-	qr := finder.Query(result, dexFiles, *flagQuery, scope)
+	var qopts []finder.QueryOption
+	if pm != nil {
+		qopts = append(qopts, finder.QueryOption{Mapping: pm})
+	}
+	qr := finder.Query(result, dexFiles, *flagQuery, scope, qopts...)
 	filteredResult := &finder.ScanResult{
 		MethodRefs: qr.MatchedMethods,
 		FieldRefs:  qr.MatchedFields,
