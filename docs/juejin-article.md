@@ -232,6 +232,166 @@ dexfinder --dex-file app.apk --query "content://com.android.contacts" --scope ev
 
 DEX 解析器参考了 AOSP `libdexfile` 的指令格式定义（`dex_instruction_list.h`），但完全独立实现——Google 自己都写了 4 套 DEX 解析器（libdexfile C++、dexlib2 Java、D8/R8 Java、dx Java），每套适配不同场景。我们的 Go 实现只覆盖 veridex 需要的子集，保持精简。
 
+## 实战案例：5 秒扫出微信的定位隐私全景
+
+### 背景
+
+假设你是隐私合规审计人员，需要回答一个问题：**微信在哪些场景下获取了用户的地理位置？** 这是一个 248MB 的 APK，16 个 DEX 文件，22.5 万个类，100 万个方法引用。
+
+手工排查？不可能。反编译看 smali？大海捞针。
+
+一行命令：
+
+```bash
+dexfinder --dex-file weixin.apk \
+  --query "android.location.LocationManager" \
+  --trace --depth 6
+```
+
+3.7 秒扫描完毕，5.4 秒输出完整调用链树。
+
+### 发现了什么
+
+微信对 `LocationManager` 的调用分为 5 大类，覆盖了 7 个系统 API：
+
+#### 1. 持续定位：`requestLocationUpdates`
+
+```
+android.location.LocationManager.requestLocationUpdates(String, long, float, LocationListener, Looper)
+└── com.tencent.magicar.MagicAR.startLocationListen(MagicAR.java)
+```
+
+只有一个直接调用点——**MagicAR**（微信的 AR 功能）。微信的主业务定位**没有直接调用系统 API**，而是走腾讯地图 SDK 的封装。这说明微信在定位架构上做了良好的收口管理。
+
+#### 2. 最近位置：`getLastKnownLocation`
+
+```
+android.location.LocationManager.getLastKnownLocation(String)
+└── androidx.appcompat.app.t0.a(t0.java)
+    └── ...g0.a(g0.java)
+        ├── AppCompatActivity.onConfigurationChanged(...)
+        │   ├── WxaLiteAppSheetUI.onConfigurationChanged(...)
+        │   ├── UIComponentActivity.onConfigurationChanged(...)
+        │   │   └── MMFragmentActivity → MMActivity → VASLauncher → BizChatConversationUI
+        │   └── WxaLiteAppTransparentUI.onConfigurationChanged(...)
+        └── AppCompatActivity.onStart(...)
+            ├── LauncherUI.onStart(...)
+            ├── AppBrandUI.onStart(...)
+            └── WxaFlutterActivity.onStart(...)
+```
+
+这个调用来自 AndroidX 的 **TwilightManager**（日夜模式切换），用位置判断日出日落时间。触发者包括微信主界面 `LauncherUI`、小程序 `AppBrandUI`、Flutter 容器 `WxaFlutterActivity` 等——**几乎每个 Activity 的 `onStart` 和 `onConfigurationChanged` 都会间接触发**。
+
+这是个有意思的发现：很多用户不知道的是，你每次打开微信、切换小程序、旋转屏幕时，AndroidX 都在静默获取一次粗略位置来判断是否该切换深色模式。
+
+#### 3. 定位可用性检查：`isProviderEnabled`（40+ 调用点）
+
+这是调用量最大的一类，遍布微信的各个业务模块：
+
+```
+android.location.LocationManager.isProviderEnabled(String)
+├── l2.a(l2.java)  ← 核心工具类，被以下场景调用：
+│   ├── 聊天发位置：chatting.component.biz.a/c/d.onClick
+│   ├── 摇一摇：ShakeReportUI$1.onGetLocation
+│   ├── 附近的人：NearbyFriendsUI.onSceneEnd / RadarViewController
+│   ├── 卡券门店：CardDetailUI.onResume / CardShopUI.onCreate
+│   ├── 视频号直播 POI：finder.live.widget.ko/u7.onClick
+│   ├── 视频号发现 POI：finder.activity.poi.ui.q0/q.onGetLocation
+│   ├── 扫一扫：scanner.ui.o0.onGetLocation
+│   ├── 运动轨迹：traceroute.ui.e.onGetLocation
+│   ├── 小程序定位：appbrand.jsapi.lbs.l1 / appbrand.i3.k
+│   ├── 外接设备：ExdeviceAddDataSourceUI / ExdeviceBindDeviceGuideUI
+│   ├── 附近小程序：nearlife.ui.j.onGetLocation
+│   ├── H5 定位：webview.ui.tools.jsapi.h5.A6 / z0.Q4
+│   └── 钱包地址：WalletAddAddressUI.onCreate
+├── l2.b(l2.java)  ← 另一个重载，同样被大量业务调用
+└── j91.e0.onReceive(...)  ← 广播接收器监听定位状态变化
+```
+
+`l2` 是微信的定位工具类（`com.tencent.mm.sdk.platformtools.l2`），是微信所有定位功能的**统一入口**。40 多个业务模块都经过它来检查 GPS/Network Provider 是否可用。
+
+#### 4. GPS 支持检查：`getAllProviders`
+
+```
+android.location.LocationManager.getAllProviders()
+└── TencentLocationUtils.isSupportGps(...)
+```
+
+腾讯地图 SDK 的内部调用，检查设备是否支持 GPS。
+
+#### 5. GNSS 状态监听：`registerGnssStatusCallback`
+
+```
+android.location.LocationManager.registerGnssStatusCallback(...)
+└── MagicAR.startLocationListen(...)
+```
+
+同样只在 AR 功能中使用。
+
+### 结合大模型深度分析
+
+dexfinder 输出结构化 JSON（`--format model`），可以直接喂给大模型做深度分析：
+
+```bash
+dexfinder --dex-file weixin.apk \
+  --query "android.location.LocationManager" \
+  --trace --depth 6 --format model \
+  > weixin_location_report.json
+```
+
+然后把 JSON 交给 Claude/GPT 分析：
+
+> **Prompt**: 以下是微信 APK 中所有 LocationManager 系统 API 的调用链数据（JSON 格式）。请从隐私合规角度分析：1) 哪些是用户主动触发的定位？2) 哪些是后台静默获取的？3) 是否有过度收集的风险？4) 给出合规改进建议。
+
+大模型可以基于结构化数据给出精准分析：
+
+---
+
+**1. 用户主动触发的定位（合理）**
+
+| 场景 | 触发方式 | 调用链入口 |
+|---|---|---|
+| 聊天发位置 | 用户点击"位置"按钮 | `chatting.component.biz.c.onClick` |
+| 摇一摇 | 用户摇动手机 | `ShakeReportUI$1.onGetLocation` |
+| 附近的人 | 用户主动打开 | `NearbyFriendsUI.onSceneEnd` |
+| 扫一扫 | 用户点击扫码 | `scanner.ui.o0.onGetLocation` |
+| 视频号 POI | 用户选择位置 | `finder.activity.poi.ui.q.onGetLocation` |
+| 小程序定位 | 小程序调用 wx.getLocation | `appbrand.jsapi.lbs.l1` |
+
+这些都是**用户明确触发**的场景，符合"最小必要"原则。
+
+**2. 非用户直接触发但合理的定位**
+
+| 场景 | 触发时机 | 分析 |
+|---|---|---|
+| TwilightManager | 每个 Activity 启动 | AndroidX 框架自动行为，用于日夜模式判断，只读 `getLastKnownLocation`（缓存值），不主动请求新定位 |
+| 卡券门店 | `CardDetailUI.onResume` | 打开卡券时自动定位附近门店，属于功能需要 |
+
+**3. 需要关注的潜在风险**
+
+| 风险 | 说明 |
+|---|---|
+| `j91.e0.onReceive` | 广播接收器监听定位开关状态变化，可能在后台触发 |
+| `isProviderEnabled` 高频调用 | 40+ 个场景都在检查定位状态，虽不获取坐标，但反映了对定位的强依赖 |
+| 外接设备相关 | `ExdeviceBindDeviceGuideUI` 等在设备绑定时获取位置，需告知用户 |
+
+**4. 架构亮点**
+
+微信的定位架构设计值得参考：
+- **统一收口**：所有业务通过 `l2` 工具类和腾讯地图 SDK，不直接调系统 API
+- **只有 MagicAR 直接调 `requestLocationUpdates`**，其余业务都经过 SDK 封装
+- **权限与功能解耦**：先 `isProviderEnabled` 检查，再决定是否请求定位
+
+---
+
+### 从人工审计到 AI 辅助审计
+
+传统做法：安全工程师用 jadx 反编译 → 搜索 `LocationManager` → 人肉跟踪调用链 → 写报告。一个 248MB 的 APK 至少需要 **2-3 天**。
+
+现在：`dexfinder` 5 秒出数据 → 结构化 JSON 喂给大模型 → 大模型输出分析报告。整个过程 **5 分钟**。
+
+这不是取代安全工程师，而是让他们从"找数据"的苦力中解放出来，专注于"做判断"。
+
 ## 安装
 
 ```bash
