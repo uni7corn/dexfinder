@@ -418,6 +418,11 @@ func init() {
 	opcodeFormat[OpConstWide] = Fmt51l
 }
 
+// GetOpcodeFormat returns the instruction format for a given opcode.
+func GetOpcodeFormat(op Opcode) InstrFormat {
+	return opcodeFormat[op]
+}
+
 // InstrSizeInCodeUnits returns the size of an instruction format in 16-bit code units.
 func InstrSizeInCodeUnits(fmt InstrFormat) uint32 {
 	switch fmt {
@@ -810,6 +815,53 @@ func (op Opcode) IsSwitch() bool {
 // IsReturn returns true for return instructions.
 func (op Opcode) IsReturn() bool {
 	return op >= OpReturnVoid && op <= OpReturnObject
+}
+
+// ForEachInstruction iterates instructions without allocating a slice.
+// The Instruction pointer is reused across callbacks — do not retain it.
+func ForEachInstruction(insns []uint16, fn func(inst *Instruction)) {
+	var inst Instruction
+	pc := uint32(0)
+	for pc < uint32(len(insns)) {
+		op := Opcode(insns[pc] & 0xFF)
+		fmt := opcodeFormat[op]
+		size := InstrSizeInCodeUnits(fmt)
+
+		if op == OpNop {
+			ident := insns[pc] >> 8
+			switch ident {
+			case 0x01:
+				if pc+1 < uint32(len(insns)) {
+					size = uint32(insns[pc+1])*2 + 4
+				}
+			case 0x02:
+				if pc+1 < uint32(len(insns)) {
+					size = uint32(insns[pc+1])*4 + 2
+				}
+			case 0x03:
+				if pc+3 < uint32(len(insns)) {
+					elemWidth := uint32(insns[pc+1])
+					elemCount := uint32(insns[pc+2]) | uint32(insns[pc+3])<<16
+					size = (elemCount*elemWidth+1)/2 + 4
+				}
+			}
+		}
+
+		end := pc + size
+		if end > uint32(len(insns)) {
+			end = uint32(len(insns))
+		}
+
+		inst.Op = op
+		inst.Raw = insns[pc:end]
+		inst.DexPC = pc
+		fn(&inst)
+
+		if size == 0 {
+			size = 1
+		}
+		pc += size
+	}
 }
 
 // DecodeAll decodes all instructions from a code_item's insns array.

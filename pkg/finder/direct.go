@@ -66,23 +66,30 @@ func (f *DirectFinder) Scan() *ScanResult {
 	for dexIdx, df := range f.dexFiles {
 		// Collect all referenced types
 		for i := uint32(0); i < df.NumTypeIDs(); i++ {
-			desc := df.GetTypeDescriptor(i)
-			result.Classes[desc] = true
+			result.Classes[df.GetTypeDescriptor(i)] = true
 		}
 
 		// Collect full string table
 		for i := uint32(0); i < df.NumStringIDs(); i++ {
-			s := df.GetString(i)
-			if s != "" {
+			if s := df.GetString(i); s != "" {
 				result.AllStrings[s] = true
 			}
+		}
+
+		// Pre-compute all method/field API signatures for this DEX (avoid repeated string concat)
+		methodSigs := make([]string, df.NumMethodIDs())
+		for i := uint32(0); i < df.NumMethodIDs(); i++ {
+			methodSigs[i] = df.GetApiMethodName(i)
+		}
+		fieldSigs := make([]string, df.NumFieldIDs())
+		for i := uint32(0); i < df.NumFieldIDs(); i++ {
+			fieldSigs[i] = df.GetApiFieldName(i)
 		}
 
 		// Scan each class
 		for ci := range df.ClassDefs {
 			cd := &df.ClassDefs[ci]
-			classDesc := df.GetTypeDescriptor(cd.ClassIdx)
-			if !f.filter.Matches(classDesc) {
+			if !f.filter.Matches(df.GetTypeDescriptor(cd.ClassIdx)) {
 				continue
 			}
 
@@ -95,13 +102,11 @@ func (f *DirectFinder) Scan() *ScanResult {
 				if method.CodeOff == 0 {
 					continue
 				}
-
 				codeItem := df.GetCodeItem(method.CodeOff)
 				if codeItem == nil || len(codeItem.Insns) == 0 {
 					continue
 				}
-
-				f.scanMethod(dexIdx, df, method.MethodIdx, codeItem, result)
+				f.scanMethodFast(dexIdx, df, method.MethodIdx, codeItem.Insns, methodSigs, fieldSigs, result)
 			}
 		}
 	}
@@ -109,78 +114,65 @@ func (f *DirectFinder) Scan() *ScanResult {
 	return result
 }
 
-func (f *DirectFinder) scanMethod(dexIdx int, df *dex.DexFile, methodIdx uint32, code *dex.CodeItem, result *ScanResult) {
-	instructions := dex.DecodeAll(code.Insns)
-
-	for i := range instructions {
-		inst := &instructions[i]
+// scanMethodFast uses ForEachInstruction (zero-alloc iterator) + pre-computed signatures.
+func (f *DirectFinder) scanMethodFast(dexIdx int, df *dex.DexFile, methodIdx uint32, insns []uint16, methodSigs []string, fieldSigs []string, result *ScanResult) {
+	dex.ForEachInstruction(insns, func(inst *dex.Instruction) {
 		op := inst.Op
 
 		switch {
-		// Invoke instructions (non-range): method index in VRegB_35c
 		case op == dex.OpInvokeVirtual || op == dex.OpInvokeSuper ||
 			op == dex.OpInvokeDirect || op == dex.OpInvokeStatic ||
 			op == dex.OpInvokeInterface:
 			calleeIdx := inst.VRegB_35c()
-			api := df.GetApiMethodName(calleeIdx)
-			result.MethodRefs[api] = append(result.MethodRefs[api], MethodRef{
-				CallerDexIdx: dexIdx,
-				CallerMethod: methodIdx,
-				CalleeAPI:    api,
-			})
+			if calleeIdx < uint32(len(methodSigs)) {
+				api := methodSigs[calleeIdx]
+				result.MethodRefs[api] = append(result.MethodRefs[api], MethodRef{
+					CallerDexIdx: dexIdx, CallerMethod: methodIdx, CalleeAPI: api,
+				})
+			}
 
-		// Invoke range instructions: method index in VRegB_3rc
 		case op == dex.OpInvokeVirtualRange || op == dex.OpInvokeSuperRange ||
 			op == dex.OpInvokeDirectRange || op == dex.OpInvokeStaticRange ||
 			op == dex.OpInvokeInterfaceRange:
 			calleeIdx := inst.VRegB_3rc()
-			api := df.GetApiMethodName(calleeIdx)
-			result.MethodRefs[api] = append(result.MethodRefs[api], MethodRef{
-				CallerDexIdx: dexIdx,
-				CallerMethod: methodIdx,
-				CalleeAPI:    api,
-			})
+			if calleeIdx < uint32(len(methodSigs)) {
+				api := methodSigs[calleeIdx]
+				result.MethodRefs[api] = append(result.MethodRefs[api], MethodRef{
+					CallerDexIdx: dexIdx, CallerMethod: methodIdx, CalleeAPI: api,
+				})
+			}
 
-		// Instance field access: field index in VRegC_22c
 		case op >= dex.OpIget && op <= dex.OpIputShort:
 			fieldIdx := inst.VRegC_22c()
-			api := df.GetApiFieldName(fieldIdx)
-			result.FieldRefs[api] = append(result.FieldRefs[api], FieldRef{
-				CallerDexIdx: dexIdx,
-				CallerMethod: methodIdx,
-				FieldAPI:     api,
-			})
+			if fieldIdx < uint32(len(fieldSigs)) {
+				api := fieldSigs[fieldIdx]
+				result.FieldRefs[api] = append(result.FieldRefs[api], FieldRef{
+					CallerDexIdx: dexIdx, CallerMethod: methodIdx, FieldAPI: api,
+				})
+			}
 
-		// Static field access: field index in VRegB_21c
 		case op >= dex.OpSget && op <= dex.OpSputShort:
 			fieldIdx := inst.VRegB_21c()
-			api := df.GetApiFieldName(fieldIdx)
-			result.FieldRefs[api] = append(result.FieldRefs[api], FieldRef{
-				CallerDexIdx: dexIdx,
-				CallerMethod: methodIdx,
-				FieldAPI:     api,
-			})
+			if fieldIdx < uint32(len(fieldSigs)) {
+				api := fieldSigs[fieldIdx]
+				result.FieldRefs[api] = append(result.FieldRefs[api], FieldRef{
+					CallerDexIdx: dexIdx, CallerMethod: methodIdx, FieldAPI: api,
+				})
+			}
 
-		// String constants
 		case op == dex.OpConstString:
-			strIdx := inst.VRegB_21c()
-			str := df.GetString(strIdx)
+			str := df.GetString(inst.VRegB_21c())
 			result.StringRefs[str] = append(result.StringRefs[str], StringRef{
-				CallerDexIdx: dexIdx,
-				CallerMethod: methodIdx,
-				Value:        str,
+				CallerDexIdx: dexIdx, CallerMethod: methodIdx, Value: str,
 			})
 
 		case op == dex.OpConstStringJumbo:
-			strIdx := inst.VRegB_31c()
-			str := df.GetString(strIdx)
+			str := df.GetString(inst.VRegB_31c())
 			result.StringRefs[str] = append(result.StringRefs[str], StringRef{
-				CallerDexIdx: dexIdx,
-				CallerMethod: methodIdx,
-				Value:        str,
+				CallerDexIdx: dexIdx, CallerMethod: methodIdx, Value: str,
 			})
 		}
-	}
+	})
 }
 
 // ReflectAccessResult holds potential reflection access findings from cross-matching classes × strings.
