@@ -14,8 +14,8 @@ const (
 	ScopeCaller                             // match caller method (调用方)
 	ScopeString                             // match string constants in code (const-string)
 	ScopeStringTable                        // match full DEX string table (annotations, debug, etc.)
-	ScopeAll         = ScopeCallee | ScopeCaller | ScopeString
-	ScopeEverything  = ScopeAll | ScopeStringTable
+	ScopeAll         = ScopeCallee | ScopeString                   // default: callee + strings (no caller)
+	ScopeEverything  = ScopeCallee | ScopeCaller | ScopeString | ScopeStringTable
 )
 
 // QueryResult holds matched items from a query.

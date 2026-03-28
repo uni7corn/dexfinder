@@ -69,12 +69,12 @@ TRACE OPTIONS (--trace):
   --style  dex    DEX/JNI signatures: Bar.method(Ljava/lang/String;)V
 
 SEARCH SCOPE (--scope):
-  all            Methods + fields + code strings (default)
-  callee         Only target API signatures
-  caller         Only caller method signatures
+  all            Callee + fields + code strings (default)
+  callee         Who calls this method?
+  caller         What does this method call internally?
   string         Only string constants in code
   string-table   Code strings + full DEX string table
-  everything     All of the above
+  everything     All of the above (callee + caller + strings + string table)
 
 EXAMPLES:
   # Scan APK and show stats
