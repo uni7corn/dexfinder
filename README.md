@@ -117,6 +117,43 @@ Three independent axes, freely combinable:
 | `java` | `com.example.Foo.method(Foo.java)` | Human-readable (default) |
 | `dex` | `Foo.method(Ljava/lang/String;)V` | Precise signature analysis |
 
+### `--scope` (search scope)
+
+Controls **what kind of references** the query matches against. This is critical for understanding results.
+
+| Value | What it searches | Question it answers | Output tag |
+|---|---|---|---|
+| `all` | Callee APIs + fields + code strings | "Who calls this API?" (default) | `[METHOD]` `[FIELD]` `[STRING]` |
+| `callee` | Only target API signatures in `invoke-*` / `get/put` instructions | "Who calls this specific method/field?" | `[METHOD]` `[FIELD]` |
+| `caller` | Only the calling method's signature | "What does this method call internally?" | `[CALLER→]` |
+| `string` | String constants in `const-string` instructions | "Where is this string used in code?" | `[STRING]` |
+| `string-table` | Code strings + full DEX string table | "Does this string exist anywhere in DEX?" (includes annotations, dead code) | `[STRING]` `[STRING_TABLE]` |
+| `everything` | All of the above combined | Full picture | all tags |
+
+**Understanding callee vs caller:**
+
+```
+scope=callee: "Who calls finish()?"
+    onCreate ──calls──→ finish()     ← these callers are shown
+    onResume ──calls──→ finish()
+
+scope=caller: "What does finish() call internally?"
+    finish() ──calls──→ Log.i()      ← these callees are shown
+    finish() ──calls──→ super.finish()
+```
+
+`--scope=all` (default) = `callee` + `string`. The `caller` direction is intentionally excluded from default because it answers a fundamentally different question. Use `--scope=caller` or `--scope=everything` explicitly when you need it.
+
+**Understanding output tags:**
+
+| Tag | Meaning |
+|---|---|
+| `[METHOD]` | A method **being called** matches your query (callee match). Indented lines are the callers. |
+| `[FIELD]` | A field **being accessed** matches your query. Indented lines are the accessors. |
+| `[CALLER→]` | A **calling method** matches your query. The indented line shows what API it's calling. |
+| `[STRING]` | A string constant in code matches your query. Indented lines are where it's used. |
+| `[STRING_TABLE]` | String exists in DEX string table but has no `const-string` reference in code (may be in annotations, optimized out by R8, etc.) |
+
 ## Examples
 
 ### 1. Scan APK statistics
@@ -509,6 +546,43 @@ dexfinder --dex-file app.apk --query "getDeviceId" --trace --format json
 # JSON 列表
 dexfinder --dex-file app.apk --query "getDeviceId" --trace --format json --layout list
 ```
+
+### `--scope` 搜索范围
+
+控制查询匹配**哪种引用类型**。理解这个参数对正确解读结果至关重要。
+
+| 值 | 搜索内容 | 回答的问题 | 输出标签 |
+|---|---|---|---|
+| `all` | 被调 API + 字段 + 代码字符串 | "谁调了这个方法？"（默认） | `[METHOD]` `[FIELD]` `[STRING]` |
+| `callee` | 仅 `invoke-*` / `get/put` 指令中的目标签名 | "谁调了这个具体方法/字段？" | `[METHOD]` `[FIELD]` |
+| `caller` | 仅调用方法的签名 | "这个方法内部调了什么？" | `[CALLER→]` |
+| `string` | `const-string` 指令中的字符串常量 | "这个字符串在代码哪里使用了？" | `[STRING]` |
+| `string-table` | 代码字符串 + DEX 完整字符串表 | "这个字符串是否存在于 DEX 中？"（含注解、死代码） | `[STRING]` `[STRING_TABLE]` |
+| `everything` | 以上全部 | 完整视图 | 全部标签 |
+
+**callee vs caller 的区别：**
+
+```
+scope=callee: "谁调了 finish()？"
+    onCreate ──调用──→ finish()     ← 显示这些调用者
+    onResume ──调用──→ finish()
+
+scope=caller: "finish() 内部调了什么？"
+    finish() ──调用──→ Log.i()      ← 显示这些被调用者
+    finish() ──调用──→ super.finish()
+```
+
+`--scope=all`（默认）= `callee` + `string`。`caller` 方向被故意排除在默认之外，因为它回答的是完全不同的问题。需要时用 `--scope=caller` 或 `--scope=everything` 显式启用。
+
+**输出标签含义：**
+
+| 标签 | 含义 |
+|---|---|
+| `[METHOD]` | 你搜的方法**被别人调用了**。缩进行是调用者。 |
+| `[FIELD]` | 你搜的字段**被别人访问了**。缩进行是访问者。 |
+| `[CALLER→]` | 你搜的方法名出现在某个**调用方**中，缩进行显示它调了什么 API。 |
+| `[STRING]` | 代码中的字符串常量匹配。缩进行是使用该字符串的方法。 |
+| `[STRING_TABLE]` | 字符串仅存在于 DEX 字符串表中，代码里没有 `const-string` 引用（可能在注解中、被 R8 优化掉等）。 |
 
 ## 更多用法
 
