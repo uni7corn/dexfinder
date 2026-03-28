@@ -1,0 +1,100 @@
+com.test.dexfinder.MainActivity -> com.test.dexfinder.MainActivity:
+# {"id":"sourceFile","fileName":"MainActivity.java"}
+    int $r8$clinit -> a
+      # {"id":"com.android.tools.r8.synthesized"}
+    1:4:void <init>():9:9 -> <init>
+    1:3:void onCreate(android.os.Bundle):33:33 -> onCreate
+    4:17:void onCreate(android.os.Bundle):51:51 -> onCreate
+    18:21:void onCreate(android.os.Bundle):54:54 -> onCreate
+com.test.dexfinder.TestEntry -> com.test.dexfinder.TestEntry:
+# {"id":"sourceFile","fileName":"TestEntry.java"}
+    9:14:void com.test.dexfinder.cases.ReflectionCases.testClassForName():14:14 -> runAllTests
+    9:14:void runAllTests(android.content.Context):16 -> runAllTests
+    15:25:void com.test.dexfinder.cases.ReflectionCases.testClassForName():15:15 -> runAllTests
+    15:25:void runAllTests(android.content.Context):16 -> runAllTests
+    26:28:void com.test.dexfinder.cases.ReflectionCases.testClassForName():17:17 -> runAllTests
+    26:28:void runAllTests(android.content.Context):16 -> runAllTests
+    29:34:void com.test.dexfinder.cases.ReflectionCases.testGetMethod():24:24 -> runAllTests
+    29:34:void runAllTests(android.content.Context):17 -> runAllTests
+    35:46:void com.test.dexfinder.cases.ReflectionCases.testGetMethod():25:25 -> runAllTests
+    35:46:void runAllTests(android.content.Context):17 -> runAllTests
+    47:57:void com.test.dexfinder.cases.ReflectionCases.testGetMethod():26:26 -> runAllTests
+    47:57:void runAllTests(android.content.Context):17 -> runAllTests
+    58:60:void com.test.dexfinder.cases.ReflectionCases.testGetMethod():28:28 -> runAllTests
+    58:60:void runAllTests(android.content.Context):17 -> runAllTests
+    61:66:void com.test.dexfinder.cases.ReflectionCases.testGetDeclaredField():35:35 -> runAllTests
+    61:66:void runAllTests(android.content.Context):18 -> runAllTests
+    67:72:void com.test.dexfinder.cases.ReflectionCases.testGetDeclaredField():36:36 -> runAllTests
+    67:72:void runAllTests(android.content.Context):18 -> runAllTests
+    73:77:void com.test.dexfinder.cases.ReflectionCases.testGetDeclaredField():37:37 -> runAllTests
+    73:77:void runAllTests(android.content.Context):18 -> runAllTests
+    78:80:void com.test.dexfinder.cases.ReflectionCases.testGetDeclaredField():39:39 -> runAllTests
+    78:80:void runAllTests(android.content.Context):18 -> runAllTests
+    81:84:void runAllTests(android.content.Context):19:19 -> runAllTests
+    85:88:void com.test.dexfinder.cases.ReflectionCases.testIndirectReflection(java.lang.String,java.lang.String):46:46 -> runAllTests
+    85:88:void runAllTests(android.content.Context):19 -> runAllTests
+    89:92:void com.test.dexfinder.cases.ReflectionCases.testIndirectReflection(java.lang.String,java.lang.String):47:47 -> runAllTests
+    89:92:void runAllTests(android.content.Context):19 -> runAllTests
+    93:97:void com.test.dexfinder.cases.ReflectionCases.testIndirectReflection(java.lang.String,java.lang.String):48:48 -> runAllTests
+    93:97:void runAllTests(android.content.Context):19 -> runAllTests
+    98:100:void com.test.dexfinder.cases.ReflectionCases.testIndirectReflection(java.lang.String,java.lang.String):50:50 -> runAllTests
+    98:100:void runAllTests(android.content.Context):19 -> runAllTests
+    101:105:void com.test.dexfinder.cases.GenericCases$Container.<init>():18:18 -> runAllTests
+    101:105:void com.test.dexfinder.cases.GenericCases.testGenericClass():46 -> runAllTests
+    101:105:void runAllTests(android.content.Context):22 -> runAllTests
+    106:110:void com.test.dexfinder.cases.GenericCases$Container.addItem(java.lang.Object):22:22 -> runAllTests
+    106:110:void com.test.dexfinder.cases.GenericCases.testGenericClass():48 -> runAllTests
+    106:110:void runAllTests(android.content.Context):22 -> runAllTests
+    111:114:void com.test.dexfinder.cases.GenericCases.testGenericClass():51:51 -> runAllTests
+    111:114:void runAllTests(android.content.Context):22 -> runAllTests
+    115:117:void com.test.dexfinder.cases.GenericCases$Container.<init>():16:16 -> runAllTests
+    115:117:void com.test.dexfinder.cases.GenericCases.testGenericClass():51 -> runAllTests
+    115:117:void runAllTests(android.content.Context):22 -> runAllTests
+    118:122:void com.test.dexfinder.cases.GenericCases$Container.<init>():18:18 -> runAllTests
+    118:122:void com.test.dexfinder.cases.GenericCases.testGenericClass():51 -> runAllTests
+    118:122:void runAllTests(android.content.Context):22 -> runAllTests
+    123:127:void com.test.dexfinder.cases.GenericCases$Container.<init>():18:18 -> runAllTests
+    123:127:void com.test.dexfinder.cases.GenericCases.testGenericClass():56 -> runAllTests
+    123:127:void runAllTests(android.content.Context):22 -> runAllTests
+    128:132:void com.test.dexfinder.cases.GenericCases.testGenericClass():57:57 -> runAllTests
+--
+com.test.dexfinder.cases.DeepCallChain -> R8$$REMOVED$$CLASS$$83:
+# {"id":"sourceFile","fileName":"DeepCallChain.java"}
+com.test.dexfinder.cases.DeepCallChain$$ExternalSyntheticLambda0 -> U3:
+# {"id":"sourceFile","fileName":"R8$$SyntheticClass"}
+# {"id":"com.android.tools.r8.synthesized"}
+    1:4:void com.test.dexfinder.cases.DeepCallChain.lambda$level5$0(android.location.Location):39:39 -> onLocationChanged
+com.test.dexfinder.cases.EnumCases -> R8$$REMOVED$$CLASS$$85:
+# {"id":"sourceFile","fileName":"EnumCases.java"}
+com.test.dexfinder.cases.EnumCases$Priority -> R8$$REMOVED$$CLASS$$84:
+# {"id":"sourceFile","fileName":"EnumCases.java"}
+com.test.dexfinder.cases.ExceptionCases$AppException -> r5:
+# {"id":"sourceFile","fileName":"ExceptionCases.java"}
+com.test.dexfinder.cases.ExceptionCases$NetworkException -> s5:
+# {"id":"sourceFile","fileName":"ExceptionCases.java"}
+com.test.dexfinder.cases.GenericCases -> R8$$REMOVED$$CLASS$$86:
+# {"id":"sourceFile","fileName":"GenericCases.java"}
+com.test.dexfinder.cases.GenericCases$$ExternalSyntheticLambda0 -> G6:
+# {"id":"sourceFile","fileName":"R8$$SyntheticClass"}
+# {"id":"com.android.tools.r8.synthesized"}
+    1:1:int GenericCases$$ExternalSyntheticLambda0.applyAsInt(java.lang.Object):0:0 -> applyAsInt
+      # {"id":"com.android.tools.r8.synthesized"}
+com.test.dexfinder.cases.LocationCases -> R8$$REMOVED$$CLASS$$87:
+# {"id":"sourceFile","fileName":"LocationCases.java"}
+com.test.dexfinder.cases.LocationCases$SimpleLocationListener -> q8:
+# {"id":"sourceFile","fileName":"LocationCases.java"}
+    1:3:void onLocationChanged(android.location.Location):71:71 -> onLocationChanged
+    4:7:void onLocationChanged(android.location.Location):72:72 -> onLocationChanged
+    1:1:void onProviderDisabled(java.lang.String):82:82 -> onProviderDisabled
+    1:1:void onProviderEnabled(java.lang.String):79:79 -> onProviderEnabled
+    1:1:void onStatusChanged(java.lang.String,int,android.os.Bundle):76:76 -> onStatusChanged
+com.test.dexfinder.cases.PrimitiveTypeCases -> R8$$REMOVED$$CLASS$$88:
+# {"id":"sourceFile","fileName":"PrimitiveTypeCases.java"}
+com.test.dexfinder.cases.ReflectionCases -> R8$$REMOVED$$CLASS$$89:
+# {"id":"sourceFile","fileName":"ReflectionCases.java"}
+com.test.dexfinder.cases.StaticCases -> bb:
+# {"id":"sourceFile","fileName":"StaticCases.java"}
+    int StaticCases.$r8$classId -> a
+      # {"id":"com.android.tools.r8.synthesized"}
+    com.test.dexfinder.cases.StaticCases sInstance -> b
+      # {"id":"com.android.tools.r8.residualsignature","signature":"Lbb;"}

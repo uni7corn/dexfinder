@@ -1,0 +1,44 @@
+# ProGuard/R8 mapping file for integration testing
+# Simulates a real obfuscated app
+com.example.app.MainActivity -> a.a:
+    android.widget.TextView mTitle -> a
+    android.widget.Button mButton -> b
+    void onCreate(android.os.Bundle) -> a
+    void onResume() -> b
+    void onDestroy() -> c
+    java.lang.String getTitle() -> d
+    void setTitle(java.lang.String) -> e
+    void <init>() -> <init>
+com.example.app.network.ApiClient -> a.b:
+    java.lang.String BASE_URL -> a
+    void doRequest(java.lang.String,com.example.app.network.Callback) -> a
+    void doPost(java.lang.String,java.lang.String) -> b
+    com.example.app.network.ApiClient getInstance() -> c
+    void <init>() -> <init>
+com.example.app.network.Callback -> a.b$a:
+    void onSuccess(java.lang.String) -> a
+    void onError(java.lang.Throwable) -> b
+com.example.app.utils.Logger -> a.c:
+    void d(java.lang.String,java.lang.String) -> a
+    void e(java.lang.String,java.lang.String) -> b
+    void w(java.lang.String,java.lang.String) -> c
+com.example.app.location.LocationTracker -> a.d:
+    android.location.LocationManager locationManager -> a
+    void startTracking() -> a
+    void stopTracking() -> b
+    void requestLocation(java.lang.String,long,float,android.location.LocationListener) -> c
+    void onLocationChanged(android.location.Location) -> d
+    void <init>(android.content.Context) -> <init>
+com.example.app.location.LocationTracker$1 -> a.d$a:
+    void onLocationChanged(android.location.Location) -> a
+    void onProviderEnabled(java.lang.String) -> b
+    void onProviderDisabled(java.lang.String) -> c
+com.example.app.service.BackgroundService -> a.e:
+    com.example.app.location.LocationTracker tracker -> a
+    void onCreate() -> a
+    void onStartCommand(android.content.Intent,int,int) -> b
+    void onDestroy() -> c
+    void <init>() -> <init>
+com.example.app.service.BackgroundService$Worker -> a.e$a:
+    void run() -> a
+    void <init>(com.example.app.service.BackgroundService) -> <init>

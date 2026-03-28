@@ -1,0 +1,33 @@
+# Binary
+dexfinder
+dexfinder.exe
+dist/
+
+# Go
+*.test
+*.out
+*.prof
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Test APK downloads (large files, don't commit)
+testdata/hiddenapi-flags.csv
+*.apk.bak
+
+# Android test project build outputs
+test-apk-project/.gradle/
+test-apk-project/app/build/
+test-apk-project/build/
+test-apk-project/local.properties
+test-apk-project/gradle/
+
+# AOSP reference source (cloned for development only)
+art/
+.claude/
