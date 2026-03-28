@@ -38,7 +38,7 @@ var (
 
 func main() {
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, `dexfinder v%s — Cross-platform APK/DEX method & field reference finder
+		fmt.Fprintf(os.Stderr, `dexfinder %s — Cross-platform APK/DEX method & field reference finder
 
 USAGE:
   dexfinder --dex-file <path> [options]
@@ -98,7 +98,7 @@ OPTIONS:
 	flag.Parse()
 
 	if *flagVersion {
-		fmt.Printf("dexfinder v%s\n", version)
+		fmt.Printf("dexfinder %s\n", version)
 		return
 	}
 
