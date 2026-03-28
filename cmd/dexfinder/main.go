@@ -216,10 +216,14 @@ OPTIONS:
 		return
 	}
 
-	// Trace mode (text/stacktrace)
-	if *flagTrace {
+	// Trace mode
+	if *flagTrace && *flagFormat != "model" {
 		fmt.Fprintf(os.Stderr, "Building call graph ...\n")
-		report.DumpTrace(bw, result, dexFiles, *flagQuery, *flagDepth, dc)
+		if *flagFormat == "json" {
+			report.DumpTraceJSON(bw, result, dexFiles, *flagQuery, *flagDepth, dc)
+		} else {
+			report.DumpTrace(bw, result, dexFiles, *flagQuery, *flagDepth, dc)
+		}
 		fmt.Fprintf(os.Stderr, "Done in %v\n", time.Since(start))
 		return
 	}
