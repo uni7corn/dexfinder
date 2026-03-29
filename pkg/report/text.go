@@ -23,21 +23,20 @@ func DumpScan(w io.Writer, result *finder.ScanResult, dexFiles []*dex.DexFile, q
 	apis := sortedKeys(qr.MatchedMethods)
 	for _, api := range apis {
 		refs := qr.MatchedMethods[api]
-		fmt.Fprintf(w, "[METHOD] %s (%d ref)\n", api, len(refs))
-		printMethodCallers(w, refs, dexFiles)
+		fmt.Fprintf(w, "[METHOD] %s (%d ref)\n", dc.FormatAPI(api), len(refs))
+		printMethodCallersDeobf(w, refs, dexFiles, dc)
 	}
 
 	// Matched methods (by caller name) — only if there's a query and caller scope
 	if query != "" {
 		callerAPIs := sortedKeys(qr.MatchedCallers)
 		for _, api := range callerAPIs {
-			// Skip if already shown in callee match
 			if _, shown := qr.MatchedMethods[api]; shown {
 				continue
 			}
 			refs := qr.MatchedCallers[api]
-			fmt.Fprintf(w, "[CALLER→] %s (%d ref from matching callers)\n", api, len(refs))
-			printMethodCallers(w, refs, dexFiles)
+			fmt.Fprintf(w, "[CALLER→] %s (%d ref from matching callers)\n", dc.FormatAPI(api), len(refs))
+			printMethodCallersDeobf(w, refs, dexFiles, dc)
 		}
 	}
 
@@ -45,11 +44,11 @@ func DumpScan(w io.Writer, result *finder.ScanResult, dexFiles []*dex.DexFile, q
 	fields := sortedFieldKeys(qr.MatchedFields)
 	for _, api := range fields {
 		refs := qr.MatchedFields[api]
-		fmt.Fprintf(w, "[FIELD]  %s (%d ref)\n", api, len(refs))
-		printFieldCallers(w, refs, dexFiles)
+		fmt.Fprintf(w, "[FIELD]  %s (%d ref)\n", dc.FormatAPI(api), len(refs))
+		printFieldCallersDeobf(w, refs, dexFiles, dc)
 	}
 
-	// Matched strings from code (const-string instructions)
+	// Matched strings from code
 	if query != "" && len(qr.MatchedStrings) > 0 {
 		strs := sortedStringKeys(qr.MatchedStrings)
 		for _, str := range strs {
@@ -59,7 +58,7 @@ func DumpScan(w io.Writer, result *finder.ScanResult, dexFiles []*dex.DexFile, q
 				display = display[:120] + "..."
 			}
 			fmt.Fprintf(w, "[STRING] \"%s\" (%d ref)\n", display, len(refs))
-			printStringCallers(w, refs, dexFiles)
+			printStringCallersDeobf(w, refs, dexFiles, dc)
 		}
 	}
 
@@ -240,12 +239,19 @@ func DumpHiddenAPI(w io.Writer, result *finder.ScanResult, dexFiles []*dex.DexFi
 	return stats
 }
 
-func printMethodCallers(w io.Writer, refs []finder.MethodRef, dexFiles []*dex.DexFile) {
+func deobfName(dexSig string, dc *DisplayConfig) string {
+	if dc == nil || dc.Mapping == nil {
+		return dexSig
+	}
+	return dc.FormatAPI(dexSig)
+}
+
+func printMethodCallersDeobf(w io.Writer, refs []finder.MethodRef, dexFiles []*dex.DexFile, dc *DisplayConfig) {
 	callers := make(map[string]int)
 	for _, ref := range refs {
 		if ref.CallerDexIdx < len(dexFiles) {
-			name := dexFiles[ref.CallerDexIdx].GetApiMethodName(ref.CallerMethod)
-			callers[name]++
+			raw := dexFiles[ref.CallerDexIdx].GetApiMethodName(ref.CallerMethod)
+			callers[deobfName(raw, dc)]++
 		}
 	}
 	sorted := sortedCountKeys(callers)
@@ -257,44 +263,57 @@ func printMethodCallers(w io.Writer, refs []finder.MethodRef, dexFiles []*dex.De
 			fmt.Fprintf(w, "       %s\n", name)
 		}
 	}
+}
+
+func printFieldCallersDeobf(w io.Writer, refs []finder.FieldRef, dexFiles []*dex.DexFile, dc *DisplayConfig) {
+	callers := make(map[string]int)
+	for _, ref := range refs {
+		if ref.CallerDexIdx < len(dexFiles) {
+			raw := dexFiles[ref.CallerDexIdx].GetApiMethodName(ref.CallerMethod)
+			callers[deobfName(raw, dc)]++
+		}
+	}
+	sorted := sortedCountKeys(callers)
+	for _, name := range sorted {
+		count := callers[name]
+		if count > 1 {
+			fmt.Fprintf(w, "       %s (%d occurrences)\n", name, count)
+		} else {
+			fmt.Fprintf(w, "       %s\n", name)
+		}
+	}
+}
+
+func printStringCallersDeobf(w io.Writer, refs []finder.StringRef, dexFiles []*dex.DexFile, dc *DisplayConfig) {
+	callers := make(map[string]int)
+	for _, ref := range refs {
+		if ref.CallerDexIdx < len(dexFiles) {
+			raw := dexFiles[ref.CallerDexIdx].GetApiMethodName(ref.CallerMethod)
+			callers[deobfName(raw, dc)]++
+		}
+	}
+	sorted := sortedCountKeys(callers)
+	for _, name := range sorted {
+		count := callers[name]
+		if count > 1 {
+			fmt.Fprintf(w, "       %s (%d occurrences)\n", name, count)
+		} else {
+			fmt.Fprintf(w, "       %s\n", name)
+		}
+	}
+}
+
+// Keep old versions for DumpHiddenAPI (doesn't use DisplayConfig)
+func printMethodCallers(w io.Writer, refs []finder.MethodRef, dexFiles []*dex.DexFile) {
+	printMethodCallersDeobf(w, refs, dexFiles, nil)
 }
 
 func printFieldCallers(w io.Writer, refs []finder.FieldRef, dexFiles []*dex.DexFile) {
-	callers := make(map[string]int)
-	for _, ref := range refs {
-		if ref.CallerDexIdx < len(dexFiles) {
-			name := dexFiles[ref.CallerDexIdx].GetApiMethodName(ref.CallerMethod)
-			callers[name]++
-		}
-	}
-	sorted := sortedCountKeys(callers)
-	for _, name := range sorted {
-		count := callers[name]
-		if count > 1 {
-			fmt.Fprintf(w, "       %s (%d occurrences)\n", name, count)
-		} else {
-			fmt.Fprintf(w, "       %s\n", name)
-		}
-	}
+	printFieldCallersDeobf(w, refs, dexFiles, nil)
 }
 
 func printStringCallers(w io.Writer, refs []finder.StringRef, dexFiles []*dex.DexFile) {
-	callers := make(map[string]int)
-	for _, ref := range refs {
-		if ref.CallerDexIdx < len(dexFiles) {
-			name := dexFiles[ref.CallerDexIdx].GetApiMethodName(ref.CallerMethod)
-			callers[name]++
-		}
-	}
-	sorted := sortedCountKeys(callers)
-	for _, name := range sorted {
-		count := callers[name]
-		if count > 1 {
-			fmt.Fprintf(w, "       %s (%d occurrences)\n", name, count)
-		} else {
-			fmt.Fprintf(w, "       %s\n", name)
-		}
-	}
+	printStringCallersDeobf(w, refs, dexFiles, nil)
 }
 
 func sortedKeys(m map[string][]finder.MethodRef) []string {
