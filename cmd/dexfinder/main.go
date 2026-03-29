@@ -35,6 +35,7 @@ var (
 	flagMapping     = flag.String("mapping", "", "ProGuard/R8 mapping.txt for deobfuscation")
 	flagShowObf     = flag.Bool("show-obf", false, "Show obfuscated names alongside deobfuscated (requires --mapping)")
 	flagScope       = flag.String("scope", "all", "Search scope: all, callee, caller, string, string-table, everything")
+	flagOutput      = flag.String("output", "", "Write output to file instead of stdout (e.g. --output result.json)")
 	flagVersion     = flag.Bool("version", false, "Show version")
 )
 
@@ -105,6 +106,7 @@ EXAMPLES:
   dexfinder --dex-file app.apk --api-flags hiddenapi-flags.csv
   dexfinder --dex-file app.apk --api-flags hiddenapi-flags.csv --exclude-api-lists sdk
   dexfinder --dex-file app.apk --query "getDeviceId" --class-filter "Lcom/mycompany/"
+  dexfinder --dex-file app.apk --query "getDeviceId" --trace --format json --output result.json
 
 OPTIONS:
 `, version)
@@ -215,7 +217,21 @@ OPTIONS:
 	}
 
 	// Use buffered writer for large output
-	bw := bufio.NewWriterSize(os.Stdout, 256*1024)
+	// Output destination
+	var outWriter *os.File
+	if *flagOutput != "" {
+		var err error
+		outWriter, err = os.Create(*flagOutput)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating output file: %v\n", err)
+			os.Exit(1)
+		}
+		defer outWriter.Close()
+		fmt.Fprintf(os.Stderr, "Writing output to %s\n", *flagOutput)
+	} else {
+		outWriter = os.Stdout
+	}
+	bw := bufio.NewWriterSize(outWriter, 256*1024)
 	defer bw.Flush()
 
 	// Structured model output
