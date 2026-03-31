@@ -1,6 +1,7 @@
 # dexfinder
 
 [English](#english) | [中文](#中文)
+<img width="1200" height="800" alt="image" src="https://github.com/user-attachments/assets/82319cd8-20f5-4ec2-a539-a4df20bf0a66" />
 
 ---
 
