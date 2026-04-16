@@ -19,11 +19,14 @@ func DumpScan(w io.Writer, result *finder.ScanResult, dexFiles []*dex.DexFile, q
 	}
 	qr := finder.Query(result, dexFiles, query, scope, opts...)
 
+	col := dc.Color
+
 	// Matched methods (by callee API name)
 	apis := sortedKeys(qr.MatchedMethods)
 	for _, api := range apis {
 		refs := qr.MatchedMethods[api]
-		fmt.Fprintf(w, "[METHOD] %s (%d ref)\n", dc.FormatAPI(api), len(refs))
+		tag := colorTag(col, "[METHOD]")
+		fmt.Fprintf(w, "%s %s %s\n", tag, dc.FormatAPI(api), colorCount(col, len(refs), "ref"))
 		printMethodCallersDeobf(w, refs, dexFiles, dc)
 	}
 
@@ -35,7 +38,8 @@ func DumpScan(w io.Writer, result *finder.ScanResult, dexFiles []*dex.DexFile, q
 				continue
 			}
 			refs := qr.MatchedCallers[api]
-			fmt.Fprintf(w, "[CALLER→] %s (%d ref from matching callers)\n", dc.FormatAPI(api), len(refs))
+			tag := colorTag(col, "[CALLER→]")
+			fmt.Fprintf(w, "%s %s %s\n", tag, dc.FormatAPI(api), colorCount(col, len(refs), "ref from matching callers"))
 			printMethodCallersDeobf(w, refs, dexFiles, dc)
 		}
 	}
@@ -44,7 +48,8 @@ func DumpScan(w io.Writer, result *finder.ScanResult, dexFiles []*dex.DexFile, q
 	fields := sortedFieldKeys(qr.MatchedFields)
 	for _, api := range fields {
 		refs := qr.MatchedFields[api]
-		fmt.Fprintf(w, "[FIELD]  %s (%d ref)\n", dc.FormatAPI(api), len(refs))
+		tag := colorTag(col, "[FIELD]")
+		fmt.Fprintf(w, "%s  %s %s\n", tag, dc.FormatAPI(api), colorCount(col, len(refs), "ref"))
 		printFieldCallersDeobf(w, refs, dexFiles, dc)
 	}
 
@@ -57,7 +62,8 @@ func DumpScan(w io.Writer, result *finder.ScanResult, dexFiles []*dex.DexFile, q
 			if len(display) > 120 {
 				display = display[:120] + "..."
 			}
-			fmt.Fprintf(w, "[STRING] \"%s\" (%d ref)\n", display, len(refs))
+			tag := colorTag(col, "[STRING]")
+			fmt.Fprintf(w, "%s \"%s\" %s\n", tag, display, colorCount(col, len(refs), "ref"))
 			printStringCallersDeobf(w, refs, dexFiles, dc)
 		}
 	}
@@ -70,7 +76,8 @@ func DumpScan(w io.Writer, result *finder.ScanResult, dexFiles []*dex.DexFile, q
 			if len(display) > 120 {
 				display = display[:120] + "..."
 			}
-			fmt.Fprintf(w, "[STRING_TABLE] \"%s\" (in DEX string table, no code reference found)\n", display)
+			tag := colorTag(col, "[STRING_TABLE]")
+			fmt.Fprintf(w, "%s \"%s\" (in DEX string table, no code reference found)\n", tag, display)
 		}
 	}
 }
@@ -123,6 +130,7 @@ func dumpTraceTree(w io.Writer, qr *finder.QueryResult, cg *finder.CallGraph, ma
 }
 
 func printTreeNodes(w io.Writer, node *finder.CallChainNode, prefix string, dc *DisplayConfig) {
+	col := dc.Color
 	for i, caller := range node.Callers {
 		isLast := i == len(node.Callers)-1
 		connector := "├── "
@@ -131,9 +139,13 @@ func printTreeNodes(w io.Writer, node *finder.CallChainNode, prefix string, dc *
 		}
 		label := dc.FormatNode(caller.Method)
 		if caller.IsCycle {
-			label += " ⟳ [recursive]"
+			cycleMarker := " ⟳ [recursive]"
+			if col.Enabled() {
+				cycleMarker = " " + col.Cycle("⟳ [recursive]")
+			}
+			label += cycleMarker
 		}
-		fmt.Fprintf(w, "%s%s%s\n", prefix, connector, label)
+		fmt.Fprintf(w, "%s%s%s\n", colorTreePrefix(col, prefix), colorTreeConnector(col, connector), label)
 		if !caller.IsCycle {
 			childPrefix := prefix + "│   "
 			if isLast {
@@ -146,20 +158,23 @@ func printTreeNodes(w io.Writer, node *finder.CallChainNode, prefix string, dc *
 
 // dumpTraceList renders call chains as flat individual chains.
 func dumpTraceList(w io.Writer, qr *finder.QueryResult, cg *finder.CallGraph, maxDepth int, dc *DisplayConfig) {
+	col := dc.Color
 	allAPIs := append(sortedKeys(qr.MatchedMethods), sortedFieldKeys(qr.MatchedFields)...)
 	for _, api := range allAPIs {
 		tree := cg.TraceCallers(api, maxDepth)
 		chains := finder.FlatCallerChains(tree, 100)
 
 		if len(chains) == 0 {
-			fmt.Fprintf(w, "--- %s ---\n", dc.FormatHeader(api))
+			header := fmt.Sprintf("--- %s ---", dc.FormatHeader(api))
+			fmt.Fprintln(w, colorChainHeader(col, header))
 			fmt.Fprintln(w, "    (no callers found)")
 			fmt.Fprintln(w)
 			continue
 		}
 
 		for i, chain := range chains {
-			fmt.Fprintf(w, "--- Call chain #%d for %s ---\n", i+1, dc.FormatHeader(api))
+			header := fmt.Sprintf("--- Call chain #%d for %s ---", i+1, dc.FormatHeader(api))
+			fmt.Fprintln(w, colorChainHeader(col, header))
 			for j := len(chain) - 1; j >= 0; j-- {
 				fmt.Fprintf(w, "\tat %s\n", dc.FormatNode(chain[j]))
 			}
@@ -192,8 +207,12 @@ func shortName(fullAPI string) string {
 }
 
 // DumpHiddenAPI outputs hidden API findings in veridex-compatible text format.
-func DumpHiddenAPI(w io.Writer, result *finder.ScanResult, dexFiles []*dex.DexFile, db *hiddenapi.Database) *Stats {
+func DumpHiddenAPI(w io.Writer, result *finder.ScanResult, dexFiles []*dex.DexFile, db *hiddenapi.Database, dc *DisplayConfig) *Stats {
 	stats := NewStats()
+	var col *Colorizer
+	if dc != nil {
+		col = dc.Color
+	}
 
 	// Direct linking: method references
 	apis := sortedKeys(result.MethodRefs)
@@ -203,7 +222,8 @@ func DumpHiddenAPI(w io.Writer, result *finder.ScanResult, dexFiles []*dex.DexFi
 		stats.LinkingCount++
 		stats.ApiCounts[apiList]++
 		stats.Count++
-		fmt.Fprintf(w, "#%d: Linking %s %s use(s):\n", stats.Count, apiList, api)
+		level := colorHiddenLevel(col, apiList.String())
+		fmt.Fprintf(w, "#%d: Linking %s %s use(s):\n", stats.Count, level, api)
 		printMethodCallers(w, refs, dexFiles)
 		fmt.Fprintln(w)
 	}
@@ -216,7 +236,8 @@ func DumpHiddenAPI(w io.Writer, result *finder.ScanResult, dexFiles []*dex.DexFi
 		stats.LinkingCount++
 		stats.ApiCounts[apiList]++
 		stats.Count++
-		fmt.Fprintf(w, "#%d: Linking %s %s use(s):\n", stats.Count, apiList, api)
+		level := colorHiddenLevel(col, apiList.String())
+		fmt.Fprintf(w, "#%d: Linking %s %s use(s):\n", stats.Count, level, api)
 		printFieldCallers(w, refs, dexFiles)
 		fmt.Fprintln(w)
 	}
@@ -228,13 +249,15 @@ func DumpHiddenAPI(w io.Writer, result *finder.ScanResult, dexFiles []*dex.DexFi
 		stats.ReflectionCount++
 		stats.ApiCounts[apiList]++
 		stats.Count++
-		fmt.Fprintf(w, "#%d: Reflection %s %s potential use(s):\n", stats.Count, apiList, ref.Signature)
+		level := colorHiddenLevel(col, apiList.String())
+		fmt.Fprintf(w, "#%d: Reflection %s %s potential use(s):\n", stats.Count, level, ref.Signature)
 		printStringCallers(w, ref.StringRef, dexFiles)
 		fmt.Fprintln(w)
 	}
 
-	fmt.Fprintf(w, "%d hidden API(s) used: %d linked against, %d through reflection\n",
+	summary := fmt.Sprintf("%d hidden API(s) used: %d linked against, %d through reflection",
 		stats.Count, stats.LinkingCount, stats.ReflectionCount)
+	fmt.Fprintln(w, colorSummary(col, summary))
 
 	return stats
 }
@@ -350,4 +373,55 @@ func sortedCountKeys(m map[string]int) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// --- Color helpers (nil-safe) ---
+
+func colorTag(c *Colorizer, tag string) string {
+	if c == nil {
+		return tag
+	}
+	return c.Tag(tag)
+}
+
+func colorCount(c *Colorizer, n int, unit string) string {
+	if c == nil {
+		return fmt.Sprintf("(%d %s)", n, unit)
+	}
+	return c.Count(n, unit)
+}
+
+func colorTreeConnector(c *Colorizer, s string) string {
+	if c == nil {
+		return s
+	}
+	return c.TreeConnector(s)
+}
+
+func colorTreePrefix(c *Colorizer, s string) string {
+	if c == nil {
+		return s
+	}
+	return c.TreeConnector(s)
+}
+
+func colorChainHeader(c *Colorizer, s string) string {
+	if c == nil {
+		return s
+	}
+	return c.ChainHeader(s)
+}
+
+func colorHiddenLevel(c *Colorizer, s string) string {
+	if c == nil {
+		return s
+	}
+	return c.HiddenAPILevel(s)
+}
+
+func colorSummary(c *Colorizer, s string) string {
+	if c == nil {
+		return s
+	}
+	return c.Summary(s)
 }

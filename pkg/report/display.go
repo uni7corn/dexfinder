@@ -38,6 +38,7 @@ type DisplayConfig struct {
 	Format  OutputFormat // output format (text/json/model)
 	Layout  TraceLayout  // tree or list (for --trace)
 	Style   NameStyle    // dex or java (name display style)
+	Color   *Colorizer   // terminal colorizer (nil = no color)
 }
 
 // FormatAPI formats a DEX API signature for display.

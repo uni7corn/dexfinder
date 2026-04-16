@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"dex_method_finder/pkg/apk"
+	"dex_method_finder/pkg/config"
 	"dex_method_finder/pkg/dex"
 	"dex_method_finder/pkg/finder"
 	"dex_method_finder/pkg/hiddenapi"
@@ -36,6 +36,9 @@ var (
 	flagShowObf     = flag.Bool("show-obf", false, "Show obfuscated names alongside deobfuscated (requires --mapping)")
 	flagScope       = flag.String("scope", "all", "Search scope: all, callee, caller, string, string-table, everything")
 	flagOutput      = flag.String("output", "", "Write output to file instead of stdout (e.g. --output result.json)")
+	flagColor       = flag.String("color", "auto", "Color output: auto, always, never")
+	flagFailOn      = flag.String("fail-on", "", "Exit non-zero if hidden APIs at this level are found (e.g. blocked, unsupported)")
+	flagDiff        = flag.String("diff", "", "Compare with another APK/DEX and show API differences")
 	flagVersion     = flag.Bool("version", false, "Show version")
 )
 
@@ -63,6 +66,8 @@ OUTPUT (--format):
     text     Plain text with [METHOD]/[FIELD]/[STRING] tags (default)
     json     JSON output; with --trace supports tree/list layout
     model    Structured JSON with MethodInfo/FieldInfo types (for IDE/CI)
+    html     Self-contained HTML report with collapsible trees and search
+    sarif    SARIF 2.1.0 for GitHub Code Scanning / VS Code
 
 TRACE (--trace, requires --query):
     --layout tree    Merged tree — shared paths collapsed (default)
@@ -114,6 +119,26 @@ OPTIONS:
 	}
 	flag.Parse()
 
+	// Load config file (.dexfinder.yaml) and apply defaults for unset flags
+	cfg := config.Load()
+	flagSet := make(map[string]bool)
+	flag.Visit(func(f *flag.Flag) { flagSet[f.Name] = true })
+	cfg.ApplyToFlags(flagSet,
+		map[string]*string{
+			"dex-file": flagDexFile, "query": flagQuery, "format": flagFormat,
+			"layout": flagLayout, "style": flagStyle, "mapping": flagMapping,
+			"api-flags": flagFlagsFile, "class-filter": flagClassFilter,
+			"exclude-api-lists": flagExclude, "scope": flagScope,
+			"color": flagColor, "fail-on": flagFailOn, "output": flagOutput,
+		},
+		map[string]*bool{
+			"show-obf": flagShowObf, "trace": flagTrace, "stats": flagShowStats,
+		},
+		map[string]*int{
+			"depth": flagDepth,
+		},
+	)
+
 	if *flagVersion {
 		fmt.Printf("dexfinder %s\n", version)
 		return
@@ -124,10 +149,10 @@ OPTIONS:
 		os.Exit(1)
 	}
 
-	start := time.Now()
+	prog := report.NewProgress(os.Stderr)
 
 	// Load DEX files
-	fmt.Fprintf(os.Stderr, "Loading %s ...\n", *flagDexFile)
+	prog.Phasef("Loading %s", *flagDexFile)
 	dexFiles, err := apk.LoadDexFiles(*flagDexFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -140,19 +165,19 @@ OPTIONS:
 		totalMethods += df.NumMethodIDs()
 		totalClasses += df.Header.ClassDefsSize
 	}
-	fmt.Fprintf(os.Stderr, "Loaded %d DEX file(s): %d classes, %d method refs\n",
+	prog.Detail("Loaded %d DEX file(s): %d classes, %d method refs",
 		len(dexFiles), totalClasses, totalMethods)
 
 	// Load mapping (optional)
 	var pm *mapping.ProguardMapping
 	if *flagMapping != "" {
-		fmt.Fprintf(os.Stderr, "Loading mapping from %s ...\n", *flagMapping)
+		prog.Phasef("Loading mapping from %s", *flagMapping)
 		pm, err = mapping.LoadProguardMapping(*flagMapping)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error loading mapping: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Fprintf(os.Stderr, "Loaded %d class mappings\n", pm.Size())
+		prog.Detail("Loaded %d class mappings", pm.Size())
 	}
 
 	style := report.StyleJava
@@ -172,6 +197,8 @@ OPTIONS:
 		Style:   style,
 	}
 
+	// Color is set after output destination is determined (below)
+
 	// Build class filter
 	var prefixes []string
 	if *flagClassFilter != "" {
@@ -188,23 +215,23 @@ OPTIONS:
 		}
 		filter := hiddenapi.NewApiListFilter(excludeNames)
 		db = hiddenapi.NewDatabase(filter)
-		fmt.Fprintf(os.Stderr, "Loading API flags from %s ...\n", *flagFlagsFile)
+		prog.Phasef("Loading API flags from %s", *flagFlagsFile)
 		if err := db.LoadFromFile(*flagFlagsFile); err != nil {
 			fmt.Fprintf(os.Stderr, "Error loading flags: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Fprintf(os.Stderr, "Loaded %d API entries\n", db.Size())
+		prog.Detail("Loaded %d API entries", db.Size())
 	}
 
 	// Parse scope
 	scope := parseScope(*flagScope)
 
 	// Scan
-	fmt.Fprintf(os.Stderr, "Scanning ...\n")
+	prog.Phase("Scanning")
 	directFinder := finder.NewDirectFinder(dexFiles, classFilter, db)
 	result := directFinder.Scan()
-
-	elapsed := time.Since(start)
+	prog.Detail("Found %d method refs, %d field refs, %d string constants",
+		len(result.MethodRefs), len(result.FieldRefs), len(result.StringRefs))
 
 	// Stats mode
 	if *flagShowStats {
@@ -212,7 +239,29 @@ OPTIONS:
 		fmt.Printf("Field references:  %d\n", len(result.FieldRefs))
 		fmt.Printf("String constants:  %d\n", len(result.StringRefs))
 		fmt.Printf("Referenced types:  %d\n", len(result.Classes))
-		fmt.Printf("Time: %v\n", elapsed)
+		fmt.Printf("Time: %v\n", prog.Elapsed())
+		return
+	}
+
+	// Diff mode
+	if *flagDiff != "" {
+		prog.Phasef("Loading diff target %s", *flagDiff)
+		oldDex, err := apk.LoadDexFiles(*flagDiff)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading diff file: %v\n", err)
+			os.Exit(1)
+		}
+		prog.Phase("Scanning diff target")
+		oldFinder := finder.NewDirectFinder(oldDex, classFilter, nil)
+		oldResult := oldFinder.Scan()
+		diff := finder.DiffScans(oldResult, result, oldDex, dexFiles, *flagQuery, scope)
+		// Output diff (uses outWriter from below, but diff needs early output)
+		if *flagFormat == "json" {
+			report.DumpDiffJSON(os.Stdout, diff)
+		} else {
+			report.DumpDiffText(os.Stdout, diff, dc)
+		}
+		prog.Done()
 		return
 	}
 
@@ -234,45 +283,72 @@ OPTIONS:
 	bw := bufio.NewWriterSize(outWriter, 256*1024)
 	defer bw.Flush()
 
+	// Set colorizer based on output destination and format
+	colorMode := report.ColorMode(*flagColor)
+	if *flagFormat != "text" {
+		colorMode = report.ColorNever // no colors for json/model/html/sarif
+	}
+	dc.Color = report.NewColorizer(colorMode, outWriter)
+
 	// Structured model output
 	if *flagFormat == "model" {
-		outputModel(bw, result, dexFiles, pm, db, scope, start)
+		outputModel(bw, result, dexFiles, pm, db, scope, prog)
 		return
 	}
 
 	// Trace mode
 	if *flagTrace && *flagFormat != "model" {
-		fmt.Fprintf(os.Stderr, "Building call graph ...\n")
-		if *flagFormat == "json" {
+		prog.Phase("Building call graph")
+		switch *flagFormat {
+		case "json":
 			report.DumpTraceJSON(bw, result, dexFiles, *flagQuery, *flagDepth, dc)
-		} else {
+		case "html":
+			report.DumpTraceHTML(bw, result, dexFiles, *flagQuery, *flagDepth, dc)
+		case "sarif":
+			report.DumpTraceSARIF(bw, result, dexFiles, *flagQuery, *flagDepth, dc)
+		default:
 			report.DumpTrace(bw, result, dexFiles, *flagQuery, *flagDepth, dc)
 		}
-		fmt.Fprintf(os.Stderr, "Done in %v\n", time.Since(start))
+		prog.Done()
 		return
 	}
 
 	// Hidden API mode
 	if db != nil {
 		filtered := result.FilterHiddenAPIs(db)
-		if *flagFormat == "json" {
+		switch *flagFormat {
+		case "json":
 			report.DumpJSON(bw, filtered, dexFiles, *flagQuery)
-		} else {
-			report.DumpHiddenAPI(bw, filtered, dexFiles, db)
+		case "html":
+			report.DumpHiddenAPIHTML(bw, filtered, dexFiles, db, dc)
+		case "sarif":
+			report.DumpHiddenAPISARIF(bw, filtered, dexFiles, db)
+		default:
+			report.DumpHiddenAPI(bw, filtered, dexFiles, db, dc)
+		}
+		// --fail-on: exit non-zero if findings at the specified level exist
+		if *flagFailOn != "" {
+			bw.Flush()
+			checkFailOn(result, db, *flagFailOn)
 		}
 	} else {
 		// Scan mode
-		if *flagFormat == "json" {
+		switch *flagFormat {
+		case "json":
 			report.DumpJSON(bw, result, dexFiles, *flagQuery)
-		} else {
+		case "html":
+			report.DumpHTML(bw, result, dexFiles, *flagQuery, scope, dc)
+		case "sarif":
+			report.DumpScanSARIF(bw, result, dexFiles, *flagQuery, scope, dc)
+		default:
 			report.DumpScan(bw, result, dexFiles, *flagQuery, scope, dc)
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "Done in %v\n", elapsed)
+	prog.Done()
 }
 
-func outputModel(bw *bufio.Writer, result *finder.ScanResult, dexFiles []*dex.DexFile, pm *mapping.ProguardMapping, db *hiddenapi.Database, scope finder.QueryScope, start time.Time) {
+func outputModel(bw *bufio.Writer, result *finder.ScanResult, dexFiles []*dex.DexFile, pm *mapping.ProguardMapping, db *hiddenapi.Database, scope finder.QueryScope, prog *report.Progress) {
 	conv := &model.Converter{DexFiles: dexFiles, Mapping: pm}
 	meta := model.Metadata{
 		FilePath:    *flagDexFile,
@@ -330,7 +406,43 @@ func outputModel(bw *bufio.Writer, result *finder.ScanResult, dexFiles []*dex.De
 	enc := json.NewEncoder(bw)
 	enc.SetIndent("", "  ")
 	enc.Encode(ar)
-	fmt.Fprintf(os.Stderr, "Done in %v\n", time.Since(start))
+	prog.Done()
+}
+
+func checkFailOn(result *finder.ScanResult, db *hiddenapi.Database, failOn string) {
+	levels := strings.Split(failOn, ",")
+	levelSet := make(map[string]bool)
+	for _, l := range levels {
+		levelSet[strings.TrimSpace(l)] = true
+	}
+
+	// Check all method and field refs
+	count := 0
+	for api := range result.MethodRefs {
+		apiList := db.GetApiList(api)
+		if levelSet[apiList.String()] {
+			count++
+		}
+	}
+	for api := range result.FieldRefs {
+		apiList := db.GetApiList(api)
+		if levelSet[apiList.String()] {
+			count++
+		}
+	}
+	// Check reflection findings
+	reflections := result.FindPotentialReflection(db)
+	for _, ref := range reflections {
+		apiList := db.GetApiList(ref.Signature)
+		if levelSet[apiList.String()] {
+			count++
+		}
+	}
+
+	if count > 0 {
+		fmt.Fprintf(os.Stderr, "FAIL: %d hidden API(s) at level(s) [%s] found\n", count, failOn)
+		os.Exit(2)
+	}
 }
 
 func parseScope(s string) finder.QueryScope {

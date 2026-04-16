@@ -19,7 +19,13 @@ Inspired by Android's [veridex](https://android.googlesource.com/platform/art/+/
 - **ProGuard/R8 deobfuscation** — Load mapping.txt, display original names alongside obfuscated
 - **Hidden API detection** — Load hiddenapi-flags.csv, detect blocked/unsupported APIs
 - **Reflection detection** — Cross-match classes × strings to find reflection-based hidden API usage
-- **Flexible output** — text / json / model, tree / list layout, java / dex name style — all orthogonal
+- **Flexible output** — text / json / model / html / sarif, tree / list layout, java / dex name style — all orthogonal
+- **Color terminal output** — Auto-detected ANSI colors for tags, tree connectors, and API levels
+- **APK diff** — Compare two APK/DEX versions, detect added/removed/changed API references
+- **HTML reports** — Self-contained interactive HTML with collapsible trees, search, and dark theme
+- **SARIF output** — SARIF 2.1.0 for GitHub Code Scanning, VS Code, and CI pipelines
+- **CI integration** — `--fail-on blocked` exits non-zero when restricted APIs are found
+- **Config file** — `.dexfinder.yaml` for project defaults, CLI flags override
 - **Zero external dependencies** — Pure Go, self-contained DEX parser
 - **Cross-platform** — macOS (Intel / Apple Silicon), Linux (amd64 / arm64), Windows
 
@@ -91,18 +97,21 @@ dexfinder --dex-file app.apk --query "Landroid/location/LocationManager;->reques
 Three independent axes, freely combinable:
 
 ```
---format  (text / json / model)    what to output
---layout  (tree / list)            how to arrange traces
---style   (java / dex)             how to display names
+--format  (text / json / model / html / sarif)    what to output
+--layout  (tree / list)                           how to arrange traces
+--style   (java / dex)                            how to display names
+--color   (auto / always / never)                 terminal colors
 ```
 
 ### `--format`
 
 | Value | Description |
 |---|---|
-| `text` | Plain text output (default) |
+| `text` | Plain text output with colored tags (default) |
 | `json` | JSON — scan results or trace with tree/list layout |
 | `model` | Structured JSON with full MethodInfo/FieldInfo types (for IDE/CI) |
+| `html` | Self-contained HTML report with collapsible trees and search |
+| `sarif` | SARIF 2.1.0 static analysis format (GitHub / VS Code) |
 
 ### `--layout` (used with `--trace`)
 
@@ -423,6 +432,45 @@ dexfinder --dex-file app.apk \
   --class-filter "Lcom/mycompany/"
 ```
 
+### 14. HTML report
+
+```bash
+dexfinder --dex-file app.apk --query "getDeviceId" --trace --format html --output report.html
+```
+Opens in any browser — collapsible call trees, search bar, dark theme.
+
+### 15. SARIF for GitHub Code Scanning
+
+```bash
+dexfinder --dex-file app.apk --api-flags hiddenapi-flags.csv --format sarif > results.sarif
+# Upload to GitHub:
+# gh api repos/OWNER/REPO/code-scanning/sarifs -f "sarif=@results.sarif"
+```
+
+### 16. APK diff
+
+```bash
+# Compare two APK versions
+dexfinder --dex-file new.apk --diff old.apk --query "getDeviceId"
+```
+```
++ 1 added method(s)
+  + Lcom/new/Feature;->trackDevice()V
+
+- 1 removed method(s)
+  - Lcom/old/Legacy;->getIMEI()V
+
+Summary: +1 added, -1 removed, ~0 changed
+```
+
+### 17. CI gate with --fail-on
+
+```bash
+# Fail CI if any blocked hidden APIs are used
+dexfinder --dex-file app.apk --api-flags hiddenapi-flags.csv --fail-on blocked
+# Exit code: 0 = clean, 2 = violations found
+```
+
 ## Performance
 
 Benchmarked on Apple M-series, single thread:
@@ -448,15 +496,34 @@ Compared to veridex (C++, imprecise mode) on the same ~300MB APK:
 | `--depth` | Max call chain depth | `5` |
 | `--layout` | Trace layout: `tree` or `list` | `tree` |
 | `--style` | Name style: `java` or `dex` | `java` |
-| `--format` | Output format: `text`, `json`, `model` | `text` |
+| `--format` | Output format: `text`, `json`, `model`, `html`, `sarif` | `text` |
+| `--output` | Write output to file instead of stdout | — |
+| `--color` | Color mode: `auto`, `always`, `never` | `auto` |
 | `--mapping` | ProGuard/R8 mapping.txt path | — |
 | `--show-obf` | Show obfuscated names alongside deobfuscated | `false` |
 | `--api-flags` | Path to hiddenapi-flags.csv | — |
 | `--class-filter` | Comma-separated class descriptor prefixes | — |
 | `--exclude-api-lists` | API lists to exclude from reporting | — |
 | `--scope` | Search scope: `all`, `callee`, `caller`, `string`, `string-table`, `everything` | `all` |
+| `--diff` | Compare with another APK/DEX and show API differences | — |
+| `--fail-on` | Exit non-zero if hidden APIs at this level found (CI gate) | — |
 | `--stats` | Show summary statistics only | `false` |
 | `--version` | Show version | `false` |
+
+### Config File
+
+Create `.dexfinder.yaml` in your project root to set defaults:
+
+```yaml
+mapping: ./build/outputs/mapping.txt
+class-filter: "Lcom/mycompany/"
+api-flags: ./hiddenapi-flags.csv
+style: java
+depth: 8
+color: auto
+```
+
+CLI flags always override config file values.
 
 ## Building from Source
 
@@ -489,7 +556,13 @@ Apache License 2.0
 - **ProGuard/R8 反混淆** — 加载 mapping.txt，显示原始名称
 - **Hidden API 检测** — 加载 hiddenapi-flags.csv，检测 blocked/unsupported API
 - **反射检测** — 类名×字符串交叉匹配，发现反射调用的隐藏 API（兼容 veridex）
-- **灵活输出** — text / json / model 格式，tree / list 布局，java / dex 命名风格——正交组合
+- **灵活输出** — text / json / model / html / sarif 格式，tree / list 布局，java / dex 命名风格——正交组合
+- **彩色终端输出** — 自动检测 TTY，标签、树形连接线、API 级别着色
+- **APK 差异对比** — 对比两个 APK 版本，检测新增/移除/变化的 API 引用
+- **HTML 报告** — 自包含交互式 HTML，可折叠树、搜索过滤、暗色主题
+- **SARIF 输出** — SARIF 2.1.0 格式，支持 GitHub Code Scanning、VS Code
+- **CI 集成** — `--fail-on blocked` 检测到受限 API 时返回非零退出码
+- **配置文件** — `.dexfinder.yaml` 项目默认配置，命令行参数覆盖
 - **零外部依赖** — 纯 Go 实现，自包含 DEX 解析器
 - **跨平台** — macOS (Intel / Apple Silicon)、Linux (amd64 / arm64)、Windows
 
@@ -549,9 +622,10 @@ dexfinder --dex-file app.apk \
 三个独立维度，自由组合：
 
 ```
---format  (text / json / model)     输出什么
---layout  (tree / list)             怎么排列调用链
---style   (java / dex)              怎么显示名称
+--format  (text / json / model / html / sarif)    输出什么
+--layout  (tree / list)                           怎么排列调用链
+--style   (java / dex)                            怎么显示名称
+--color   (auto / always / never)                 终端着色
 ```
 
 ### `--layout` 对比（配合 `--trace`）
@@ -735,6 +809,42 @@ dexfinder --dex-file app.apk \
   --class-filter "Lcom/mycompany/"
 ```
 
+### HTML 报告
+
+```bash
+dexfinder --dex-file app.apk --query "getDeviceId" --trace --format html --output report.html
+```
+浏览器打开即用——可折叠调用树、搜索栏、暗色主题。
+
+### SARIF（GitHub Code Scanning）
+
+```bash
+dexfinder --dex-file app.apk --api-flags hiddenapi-flags.csv --format sarif > results.sarif
+```
+
+### APK 版本对比
+
+```bash
+dexfinder --dex-file new.apk --diff old.apk --query "getDeviceId"
+```
+```
++ 1 added method(s)
+  + Lcom/new/Feature;->trackDevice()V
+
+- 1 removed method(s)
+  - Lcom/old/Legacy;->getIMEI()V
+
+Summary: +1 added, -1 removed, ~0 changed
+```
+
+### CI 卡点
+
+```bash
+# 检测到 blocked API 时 CI 失败
+dexfinder --dex-file app.apk --api-flags hiddenapi-flags.csv --fail-on blocked
+# 退出码: 0 = 通过, 2 = 有违规
+```
+
 ## 性能
 
 Apple M 系列芯片，单线程：
@@ -760,15 +870,34 @@ Apple M 系列芯片，单线程：
 | `--depth` | 调用链最大深度 | `5` |
 | `--layout` | 追踪布局: `tree`（合并树）或 `list`（展开列表） | `tree` |
 | `--style` | 命名风格: `java`（可读）或 `dex`（JNI 签名） | `java` |
-| `--format` | 输出格式: `text`、`json`、`model` | `text` |
+| `--format` | 输出格式: `text`、`json`、`model`、`html`、`sarif` | `text` |
+| `--output` | 输出到文件而非 stdout | — |
+| `--color` | 颜色模式: `auto`、`always`、`never` | `auto` |
 | `--mapping` | ProGuard/R8 mapping.txt 路径 | — |
 | `--show-obf` | 同时显示混淆名和反混淆名 | `false` |
 | `--api-flags` | hiddenapi-flags.csv 路径 | — |
 | `--class-filter` | 类描述符前缀过滤（逗号分隔） | — |
 | `--exclude-api-lists` | 排除的 API 级别 | — |
 | `--scope` | 搜索范围: `all`、`callee`、`caller`、`string`、`string-table`、`everything` | `all` |
+| `--diff` | 对比另一个 APK/DEX，显示 API 差异 | — |
+| `--fail-on` | 检测到指定级别 API 时返回非零退出码（CI 卡点） | — |
 | `--stats` | 仅显示统计摘要 | `false` |
 | `--version` | 显示版本号 | `false` |
+
+### 配置文件
+
+在项目根目录创建 `.dexfinder.yaml` 设置默认值：
+
+```yaml
+mapping: ./build/outputs/mapping.txt
+class-filter: "Lcom/mycompany/"
+api-flags: ./hiddenapi-flags.csv
+style: java
+depth: 8
+color: auto
+```
+
+命令行参数始终覆盖配置文件。
 
 ## 从源码构建
 
