@@ -33,8 +33,7 @@ Inspired by Android's [veridex](https://android.googlesource.com/platform/art/+/
 
 **Homebrew** (macOS / Linux):
 ```bash
-brew tap JuneLeGency/tap
-brew install dexfinder
+brew install junelegency/tap/dexfinder
 ```
 
 **Script** (auto-detects OS/arch):
@@ -570,8 +569,7 @@ Apache License 2.0
 
 **Homebrew** (macOS / Linux):
 ```bash
-brew tap JuneLeGency/tap
-brew install dexfinder
+brew install junelegency/tap/dexfinder
 ```
 
 **脚本安装** (自动检测系统):
