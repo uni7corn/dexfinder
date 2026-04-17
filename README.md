@@ -1,11 +1,13 @@
 # dexfinder
 
-[English](#english) | [中文](#中文)
+[English](#english) | [中文](#中文) | [Website](https://junelegency.github.io/dexfinder/)
 ![dexfinder demo](dexfinder-demo.gif)
 
 ---
 
 <a name="english"></a>
+
+> **Website**: [junelegency.github.io/dexfinder](https://junelegency.github.io/dexfinder/)
 
 Cross-platform APK/DEX method & field reference finder with call chain tracing, ProGuard/R8 deobfuscation, and Android hidden API detection.
 
@@ -542,6 +544,8 @@ Apache License 2.0
 <a name="中文"></a>
 
 # dexfinder
+
+> **官网**: [junelegency.github.io/dexfinder](https://junelegency.github.io/dexfinder/?lang=zh)
 
 跨平台 APK/DEX 方法与字段引用查找器，支持调用链追踪、ProGuard/R8 反混淆、Android Hidden API 检测。
 
