@@ -1,0 +1,79 @@
+<svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg-grad" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0d1117"/>
+      <stop offset="100%" stop-color="#161b22"/>
+    </linearGradient>
+    <linearGradient id="accent-grad" x1="0" y1="0" x2="400" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#58a6ff"/>
+      <stop offset="100%" stop-color="#3fb950"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bg-grad)"/>
+
+  <!-- Decorative circles -->
+  <circle cx="950" cy="150" r="200" fill="#58a6ff" opacity="0.03"/>
+  <circle cx="250" cy="500" r="150" fill="#3fb950" opacity="0.03"/>
+
+  <!-- Logo -->
+  <rect x="80" y="80" width="56" height="56" rx="12" fill="url(#accent-grad)"/>
+  <path d="M96 100h24M96 108h16M96 116h20" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+
+  <!-- Title -->
+  <text x="150" y="118" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="40" font-weight="700" fill="#e6edf3">dexfinder</text>
+
+  <!-- Main heading -->
+  <text x="80" y="240" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="52" font-weight="800" fill="#e6edf3">Find Any Method in</text>
+  <text x="80" y="305" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="52" font-weight="800" fill="url(#accent-grad)">Any APK, Instantly</text>
+
+  <!-- Description -->
+  <text x="80" y="370" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" fill="#8b949e">Cross-platform APK/DEX method finder with call chain tracing,</text>
+  <text x="80" y="400" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" fill="#8b949e">ProGuard/R8 deobfuscation, and Android hidden API detection.</text>
+
+  <!-- Feature pills -->
+  <rect x="80" y="450" width="140" height="36" rx="18" fill="#58a6ff" opacity="0.15"/>
+  <text x="150" y="473" text-anchor="middle" font-family="monospace" font-size="14" font-weight="600" fill="#58a6ff">Call Chains</text>
+
+  <rect x="240" y="450" width="150" height="36" rx="18" fill="#3fb950" opacity="0.15"/>
+  <text x="315" y="473" text-anchor="middle" font-family="monospace" font-size="14" font-weight="600" fill="#3fb950">Deobfuscation</text>
+
+  <rect x="410" y="450" width="140" height="36" rx="18" fill="#d29922" opacity="0.15"/>
+  <text x="480" y="473" text-anchor="middle" font-family="monospace" font-size="14" font-weight="600" fill="#d29922">Hidden APIs</text>
+
+  <rect x="570" y="450" width="100" height="36" rx="18" fill="#f778ba" opacity="0.15"/>
+  <text x="620" y="473" text-anchor="middle" font-family="monospace" font-size="14" font-weight="600" fill="#f778ba">SARIF</text>
+
+  <rect x="690" y="450" width="110" height="36" rx="18" fill="#a371f7" opacity="0.15"/>
+  <text x="745" y="473" text-anchor="middle" font-family="monospace" font-size="14" font-weight="600" fill="#a371f7">APK Diff</text>
+
+  <!-- Terminal preview -->
+  <rect x="700" y="180" width="440" height="260" rx="10" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+  <rect x="700" y="180" width="440" height="32" rx="10" fill="#161b22"/>
+  <rect x="700" y="200" width="440" height="12" fill="#161b22"/>
+  <circle cx="718" cy="196" r="6" fill="#ff5f57"/>
+  <circle cx="736" cy="196" r="6" fill="#febc2e"/>
+  <circle cx="754" cy="196" r="6" fill="#28c840"/>
+
+  <text x="720" y="235" font-family="monospace" font-size="12" fill="#79c0ff">$ dexfinder</text>
+  <text x="835" y="235" font-family="monospace" font-size="12" fill="#d2a8ff">--query</text>
+  <text x="905" y="235" font-family="monospace" font-size="12" fill="#a5d6ff">"getDeviceId"</text>
+  <text x="1010" y="235" font-family="monospace" font-size="12" fill="#d2a8ff">--trace</text>
+
+  <text x="720" y="260" font-family="monospace" font-size="11" fill="#7ee787">TelephonyManager.getDeviceId()</text>
+  <text x="720" y="278" font-family="monospace" font-size="11" fill="#484f58">&#x2514;&#x2500;&#x2500;</text>
+  <text x="755" y="278" font-family="monospace" font-size="11" fill="#7ee787">aopsdk.TelephonyManager.getDeviceId()</text>
+  <text x="720" y="296" font-family="monospace" font-size="11" fill="#484f58">    &#x251c;&#x2500;&#x2500;</text>
+  <text x="768" y="296" font-family="monospace" font-size="11" fill="#7ee787">PhoneInfo.getImei()</text>
+  <text x="720" y="314" font-family="monospace" font-size="11" fill="#484f58">    &#x251c;&#x2500;&#x2500;</text>
+  <text x="768" y="314" font-family="monospace" font-size="11" fill="#7ee787">ClientIdHelper.initClientId()</text>
+  <text x="720" y="332" font-family="monospace" font-size="11" fill="#484f58">    &#x2502;   &#x2514;&#x2500;&#x2500;</text>
+  <text x="793" y="332" font-family="monospace" font-size="11" fill="#7ee787">ContextInfo.&lt;init&gt;()</text>
+  <text x="720" y="350" font-family="monospace" font-size="11" fill="#484f58">    &#x2514;&#x2500;&#x2500;</text>
+  <text x="768" y="350" font-family="monospace" font-size="11" fill="#7ee787">DeviceInfo.k()</text>
+
+  <!-- Footer -->
+  <text x="80" y="570" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="18" fill="#484f58">github.com/JuneLeGency/dexfinder</text>
+  <text x="80" y="596" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" fill="#484f58">Written in Go &middot; Zero Dependencies &middot; Apache 2.0</text>
+</svg>
